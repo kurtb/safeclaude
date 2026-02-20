@@ -9,8 +9,8 @@ Isolated Docker environment for running [Claude Code](https://docs.anthropic.com
 | Base | Ubuntu 24.04 |
 | Node | v22 (nvm) |
 | Python | 3.12 |
-| Shell | Zsh + Oh My Zsh |
-| Zsh plugins | autosuggestions, syntax-highlighting, completions, fzf |
+| Shell | Zsh + Oh My Zsh (via [dotzsh](https://github.com/kurtb/dotzsh)) |
+| Zsh plugins | autosuggestions, syntax-highlighting |
 | Tools | git, ripgrep, fzf, jq, build-essential |
 | Claude Code | Latest (official installer) |
 | User | `ubuntu` (uid 1000) with passwordless sudo |

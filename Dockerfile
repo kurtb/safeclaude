@@ -13,6 +13,8 @@ ENV NVM_DIR=/home/ubuntu/.nvm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl gnupg git openssh-client sudo \
     zsh fzf ripgrep jq unzip wget \
+    neovim tmux \
+    tree htop lsof file \
     build-essential \
     python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python${PYTHON_VERSION}-dev python3-pip \
     && rm -rf /var/lib/apt/lists/*
@@ -28,18 +30,10 @@ RUN chsh -s /usr/bin/zsh ubuntu \
 USER ubuntu
 WORKDIR /home/ubuntu
 
-# ── Oh My Zsh + plugins ──────────────────────────────────────────────
-RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended \
-    && git clone https://github.com/zsh-users/zsh-autosuggestions \
-        ${HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions \
-    && git clone https://github.com/zsh-users/zsh-syntax-highlighting \
-        ${HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting \
-    && git clone https://github.com/zsh-users/zsh-completions \
-        ${HOME}/.oh-my-zsh/custom/plugins/zsh-completions \
-    && sed -i 's/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting zsh-completions fzf)/' \
-        ${HOME}/.zshrc \
-    && sed -i 's/^ZSH_THEME="robbyrussell"/ZSH_THEME="random"/' ${HOME}/.zshrc \
-    && echo 'autoload -Uz compinit && compinit' >> ${HOME}/.zshrc
+# ── Shell setup via dotzsh ────────────────────────────────────────────
+RUN git clone --recurse-submodules https://github.com/kurtb/dotzsh ${HOME}/dev/dotzsh \
+    && cp /etc/zsh/newuser.zshrc.recommended ${HOME}/.zshrc \
+    && ${HOME}/dev/dotzsh/install.sh
 
 # ── Node.js (nvm) ────────────────────────────────────────────────────
 RUN curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
