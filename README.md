@@ -7,68 +7,56 @@ Isolated Docker environment for running [Claude Code](https://docs.anthropic.com
 | Layer | Details |
 |-------|---------|
 | Base | Ubuntu 24.04 |
-| Node | v22 (nvm) |
+| Node | v24 (fnm) |
 | Python | 3.12 |
-| Shell | Zsh + Oh My Zsh (via [dotzsh](https://github.com/kurtb/dotzsh)) |
-| Zsh plugins | autosuggestions, syntax-highlighting |
+| Shell | Zsh (via [dotzsh](https://github.com/kurtb/dotzsh)) |
+| Editors | Neovim (latest stable), Vim (via [dotvim](https://github.com/kurtb/dotvim)) |
 | Tools | git, ripgrep, fzf, jq, build-essential |
 | Claude Code | Latest (official installer) |
 | User | `ubuntu` (uid 1000) with passwordless sudo |
 
-## Build
+## Zsh Helper
 
-```bash
-docker build -t safeclaud:latest .
+Source `safeclaude.zsh` in your `.zshrc` for a convenient wrapper:
+
+```zsh
+source ~/dev/safeclaude/safeclaude.zsh
 ```
 
-## Run
+### Build the image
 
-Mount your source code into `/home/ubuntu/workspace` and use a **named volume** for `/home/ubuntu/.claude` to persist authentication and config across container restarts.
-
-### Account setup
-
-If the shared mount directory is done by Docker it is setup as root and claude code had issues reading it. Instead create these ahead of time.
-
-### Personal account
-
-```bash
-docker run -it --rm \
-  -v ~/dev/my-project:/home/ubuntu/workspace \
-  -v claude-personal-config:/home/ubuntu/.claude \
-  safeclaud:latest
+```zsh
+safeclaude build
 ```
 
-### Work account
+### Run with an environment
 
-```bash
-docker run -it --rm \
-  -v ~/dev/my-project:/home/ubuntu/workspace \
-  -v claude-work-config:/home/ubuntu/.claude \
-  safeclaud:latest
+Environments are named profiles (e.g. `personal`, `work`) whose config is stored in `~/.config/safeclaude/<env>` on your host and mounted into the container at the same path. `CLAUDE_CONFIG_DIR` is set to that path so Claude credentials and config are isolated per environment.
+
+The current directory (or a path you specify) is mounted into `/home/ubuntu/workspace/<dirname>` inside the container.
+
+```zsh
+safeclaude personal                    # current dir, personal account
+safeclaude work ~/dev/my-project       # specific path, work account
+safeclaude list                        # list configured environments
+safeclaude --help                      # show usage
 ```
 
-Using separate named volumes (`claude-personal-config` vs `claude-work-config`) keeps the two accounts fully isolated.
+The first time you use an environment, authenticate inside the container:
 
-### Custom config directory
-
-Instead of mounting to `/home/ubuntu/.claude`, you can use the `CLAUDE_CONFIG_DIR` environment variable to store Claude Code's config wherever you like:
-
-```bash
-docker run -it --rm \
-  -e CLAUDE_CONFIG_DIR=/config \
-  -v ~/my-claude-config:/config \
-  -v ~/dev/my-project:/home/ubuntu/workspace \
-  safeclaud:latest
-```
-
-## Authentication
-
-The first time you launch a container for a given profile, authenticate inside it:
-
-```bash
+```zsh
 claude login
 ```
 
-Credentials are stored in `/home/ubuntu/.claude`, which is backed by the named volume, so they persist across container restarts. Each profile's volume is independent -- logging into one does not affect the other.
+Credentials persist in `~/.config/safeclaude/<env>` on your host across container restarts.
 
-To re-authenticate at any time, run `claude login` again.
+## Manual Docker Usage
+
+```bash
+docker run -it --rm \
+  -v ~/.config/safeclaude/personal:~/.config/safeclaude/personal \
+  -e CLAUDE_CONFIG_DIR=~/.config/safeclaude/personal \
+  -v ~/dev/my-project:/home/ubuntu/workspace/my-project \
+  -w /home/ubuntu/workspace/my-project \
+  safeclaud:latest
+```
