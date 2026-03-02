@@ -11,7 +11,8 @@ Isolated Docker environment for running [Claude Code](https://docs.anthropic.com
 | Python | 3.12 |
 | Shell | Zsh (via [dotzsh](https://github.com/kurtb/dotzsh)) |
 | Editors | Neovim (latest stable), Vim (via [dotvim](https://github.com/kurtb/dotvim)) |
-| Tools | git, ripgrep, fzf, jq, build-essential |
+| Cloud | Google Cloud CLI, Pulumi (latest) |
+| Tools | git, gh (GitHub CLI), ripgrep, fzf, jq, build-essential |
 | Claude Code | Latest (official installer) |
 | User | `ubuntu` (uid 1000) with passwordless sudo |
 
