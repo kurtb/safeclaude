@@ -2,6 +2,8 @@ FROM ubuntu:24.04
 
 ARG NODE_MAJOR=24
 ARG PYTHON_VERSION=3.12
+ARG GIT_USER_NAME="Kurt Berglund"
+ARG GIT_USER_EMAIL="kurtberglund@hotmail.com"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV SHELL=/usr/bin/zsh
@@ -50,6 +52,11 @@ RUN chsh -s /usr/bin/zsh ubuntu \
 
 USER ubuntu
 WORKDIR /home/ubuntu
+
+# ── Git config ────────────────────────────────────────────────────────
+RUN git config --global user.name "${GIT_USER_NAME}" \
+    && git config --global user.email "${GIT_USER_EMAIL}" \
+    && git config --global init.defaultBranch main
 
 # ── Shell setup via dotzsh ────────────────────────────────────────────
 RUN git clone https://github.com/kurtb/dotzsh ${HOME}/dev/dotzsh \
