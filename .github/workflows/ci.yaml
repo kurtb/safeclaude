@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./cmd/safeclaude
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic -race
+
+      - name: Coverage report
+        run: go tool cover -func=coverage.out
+
+      - name: Check internal coverage
+        run: |
+          # Fail if any internal package drops below 95% coverage
+          go tool cover -func=coverage.out | grep -E '^github.com/kurtb/safeclaude/internal/' | while read -r line; do
+            pct=$(echo "$line" | awk '{print $NF}' | tr -d '%')
+            func=$(echo "$line" | awk '{print $2}')
+            pkg=$(echo "$line" | awk '{print $1}')
+            if [ "$(echo "$pct < 95" | bc)" -eq 1 ]; then
+              echo "FAIL: $pkg $func coverage $pct% < 95%"
+              exit 1
+            fi
+          done
+          echo "All internal packages above 95% coverage"
