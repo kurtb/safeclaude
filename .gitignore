@@ -1,1 +1,6 @@
 .claude*
+bin/
+dist/
+safeclaude
+coverage.out
+coverage.html

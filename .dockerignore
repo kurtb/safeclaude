@@ -1,3 +1,13 @@
 *.md
 .git
 .claude*
+bin/
+dist/
+cmd/
+internal/
+go.mod
+go.sum
+Makefile
+.goreleaser.yaml
+coverage.*
+safeclaude

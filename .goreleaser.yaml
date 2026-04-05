@@ -1,0 +1,25 @@
+version: 2
+
+builds:
+  - main: ./cmd/safeclaude
+    binary: safeclaude
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/kurtb/safeclaude/internal/version.Version={{.Version}}
+      - -X github.com/kurtb/safeclaude/internal/version.Commit={{.ShortCommit}}
+
+archives:
+  - format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+
+changelog:
+  sort: asc
