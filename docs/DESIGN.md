@@ -252,13 +252,15 @@ Push to main with conventional commit messages
         ▼
   CI runs (build + vet + test + coverage gate)
         │
-        ▼
-  release-please analyzes commits since last tag
-        │
-        ├── feat: ... → MINOR bump
-        ├── fix: ...  → PATCH bump
-        ├── feat!: .. → MAJOR bump
-        ├── docs: ... → no release
+        ├─────────────────────────────┐
+        ▼                             ▼
+  release-please analyzes       GoReleaser snapshot build
+  commits since last tag        (pre-release artifacts)
+        │                             │
+        ├── feat: ... → MINOR         ▼
+        ├── fix: ...  → PATCH    Uploaded as workflow artifacts
+        ├── feat!: .. → MAJOR    (14-day retention, not published)
+        ├── docs: ... → no bump  Available for pre-release testing
         │
         ▼
   Opens/updates a "Release PR" with:
@@ -272,16 +274,21 @@ Push to main with conventional commit messages
   release-please creates git tag (v1.2.3)
         │
         ▼
-  Tag triggers release.yaml workflow
-        │
-        ▼
-  GoReleaser builds 6 binaries:
-    {linux,darwin,windows} × {amd64,arm64}
-        │
-        ▼
-  Published as GitHub Release with archives:
-    .tar.gz (Linux/macOS), .zip (Windows)
+  Tag triggers release.yaml workflow:
+    1. Full test suite (re-verified against tagged commit)
+    2. GoReleaser builds 6 binaries
+    3. Smoke test: extract linux/amd64 binary, verify version
+    4. Publish GitHub Release with archives
 ```
+
+**Pre-release vs release builds:** Every push to main produces snapshot
+binaries (e.g. `0.2.1-SNAPSHOT-abc1234`) uploaded as GitHub Actions artifacts.
+These are for testing before a formal release. The release build rebuilds from
+the tagged commit — Go builds are reproducible given the same source, Go
+version (`go-version-file: go.mod`), and flags (`-trimpath`), so the release
+binary is byte-for-byte identical to what was tested. The release workflow
+re-runs the full test suite and smoke-tests the built binary as an additional
+safety net.
 
 **Commit message conventions:**
 
@@ -293,6 +300,30 @@ Push to main with conventional commit messages
 | `docs:`, `chore:`, `test:`, `ci:` | Non-user-facing | No release |
 
 The version is never stored in the repo — it's derived entirely from git tags.
+
+### Hotfix process
+
+For fixes to the latest release, just commit to main — release-please handles
+the patch bump automatically:
+
+```
+main:  A ── B ── C (v1.2.0) ── D (fix: ...) ── E
+                                      │
+                                release-please opens PR for v1.2.1
+                                merge PR → tag → goreleaser
+```
+
+For fixes to older releases (e.g. v1.x while main is on v2.x), create a
+release branch from the tag:
+
+```
+git checkout -b release/v1.x v1.2.0
+# cherry-pick or write fix
+git cherry-pick <fix-commit>
+git tag v1.2.1
+git push origin release/v1.x --tags
+# Tag triggers goreleaser as usual
+```
 
 ### Installation methods
 

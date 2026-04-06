@@ -45,6 +45,38 @@ jobs:
           done
           echo "All internal packages above 95% coverage"
 
+  # Build snapshot (pre-release) binaries on every push to main.
+  # These are downloadable from the Actions run as workflow artifacts,
+  # versioned as e.g. "0.2.1-SNAPSHOT-abc1234". Not published as a
+  # GitHub Release — just available for pre-release testing.
+  snapshot:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --snapshot --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload snapshot artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-${{ github.sha }}
+          path: dist/*.tar.gz
+          retention-days: 14
+
   # On push to main, run release-please to manage version bumps.
   # release-please reads conventional commits and either:
   #   - Opens/updates a Release PR with version bump + CHANGELOG

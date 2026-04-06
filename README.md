@@ -121,6 +121,16 @@ make docker         # Build Docker image
 make clean          # Remove build artifacts
 ```
 
+### Release process
+
+Releases use [conventional commits](https://www.conventionalcommits.org/) and are automated via [release-please](https://github.com/googleapis/release-please):
+
+1. Push to `main` with conventional commit prefixes (`feat:`, `fix:`, `feat!:`, etc.)
+2. CI runs tests + builds pre-release snapshot artifacts (downloadable from the Actions run)
+3. release-please opens/updates a Release PR with version bump and CHANGELOG
+4. Merge the Release PR — release-please creates a git tag
+5. Tag triggers GoReleaser: full test suite, 6 platform binaries, smoke test, GitHub Release
+
 ## Manual Docker Usage
 
 ```bash

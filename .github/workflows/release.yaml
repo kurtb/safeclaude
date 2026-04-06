@@ -30,3 +30,17 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Smoke test release binary
+        run: |
+          # Verify the linux/amd64 binary runs and reports the correct version
+          tar -xzf dist/safeclaude_*_linux_amd64.tar.gz -C /tmp
+          version=$(/tmp/safeclaude version 2>&1 || true)
+          expected="${GITHUB_REF_NAME#v}"
+          echo "Binary reports: $version"
+          echo "Expected version: $expected"
+          if ! echo "$version" | grep -q "$expected"; then
+            echo "FAIL: version mismatch"
+            exit 1
+          fi
+          echo "Smoke test passed"
