@@ -44,3 +44,20 @@ jobs:
             fi
           done
           echo "All internal packages above 95% coverage"
+
+  # On push to main, run release-please to manage version bumps.
+  # release-please reads conventional commits and either:
+  #   - Opens/updates a Release PR with version bump + CHANGELOG
+  #   - When the Release PR is merged, creates a git tag (v1.2.3)
+  # The tag then triggers the release.yaml workflow for goreleaser.
+  release-please:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          release-type: go

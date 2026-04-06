@@ -242,13 +242,57 @@ make test-coverage  # Generate HTML coverage report
 make docker         # Build Docker image
 ```
 
-### Release process
+### Release process (automated via conventional commits)
 
-1. Tag a release: `git tag v1.0.0 && git push --tags`
-2. GitHub Actions runs goreleaser
-3. Produces 6 binaries: `{linux,darwin,windows}` × `{amd64,arm64}`
-4. Archives: `.tar.gz` for Linux/macOS, `.zip` for Windows
-5. Published as a GitHub Release with changelog
+Releases are fully automated using [release-please](https://github.com/googleapis/release-please) and [goreleaser](https://github.com/goreleaser/goreleaser):
+
+```
+Push to main with conventional commit messages
+        │
+        ▼
+  CI runs (build + vet + test + coverage gate)
+        │
+        ▼
+  release-please analyzes commits since last tag
+        │
+        ├── feat: ... → MINOR bump
+        ├── fix: ...  → PATCH bump
+        ├── feat!: .. → MAJOR bump
+        ├── docs: ... → no release
+        │
+        ▼
+  Opens/updates a "Release PR" with:
+    - Version bump
+    - CHANGELOG.md update
+        │
+        ▼
+  Merge the Release PR
+        │
+        ▼
+  release-please creates git tag (v1.2.3)
+        │
+        ▼
+  Tag triggers release.yaml workflow
+        │
+        ▼
+  GoReleaser builds 6 binaries:
+    {linux,darwin,windows} × {amd64,arm64}
+        │
+        ▼
+  Published as GitHub Release with archives:
+    .tar.gz (Linux/macOS), .zip (Windows)
+```
+
+**Commit message conventions:**
+
+| Prefix | Meaning | Version bump |
+|--------|---------|--------------|
+| `feat:` | New feature | MINOR (0.1.0 → 0.2.0) |
+| `fix:` | Bug fix | PATCH (0.2.0 → 0.2.1) |
+| `feat!:` or `BREAKING CHANGE:` | Breaking change | MAJOR (0.2.1 → 1.0.0) |
+| `docs:`, `chore:`, `test:`, `ci:` | Non-user-facing | No release |
+
+The version is never stored in the repo — it's derived entirely from git tags.
 
 ### Installation methods
 
