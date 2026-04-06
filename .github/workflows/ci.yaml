@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./cmd/safeclaude
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic -race
+
+      - name: Coverage report
+        run: go tool cover -func=coverage.out
+
+      - name: Check internal coverage
+        run: |
+          # Fail if any internal package drops below 95% coverage
+          go tool cover -func=coverage.out | grep -E '^github.com/kurtb/safeclaude/internal/' | while read -r line; do
+            pct=$(echo "$line" | awk '{print $NF}' | tr -d '%')
+            func=$(echo "$line" | awk '{print $2}')
+            pkg=$(echo "$line" | awk '{print $1}')
+            if [ "$(echo "$pct < 95" | bc)" -eq 1 ]; then
+              echo "FAIL: $pkg $func coverage $pct% < 95%"
+              exit 1
+            fi
+          done
+          echo "All internal packages above 95% coverage"
+
+  # Build snapshot (pre-release) binaries on every push to main.
+  # These are downloadable from the Actions run as workflow artifacts,
+  # versioned as e.g. "0.2.1-SNAPSHOT-abc1234". Not published as a
+  # GitHub Release — just available for pre-release testing.
+  snapshot:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0
+        with:
+          version: latest
+          args: release --snapshot --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload snapshot artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: snapshot-${{ github.sha }}
+          path: dist/*.tar.gz
+          retention-days: 14
+
+  # On push to main, run release-please to manage version bumps.
+  # release-please reads conventional commits and either:
+  #   - Opens/updates a Release PR with version bump + CHANGELOG
+  #   - When the Release PR is merged, creates a git tag (v1.2.3)
+  # The tag then triggers the release.yaml workflow for goreleaser.
+  release-please:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
+        with:
+          release-type: go

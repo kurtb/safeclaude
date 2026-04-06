@@ -1,1 +1,8 @@
-.claude*
+# Claude Code - ignore session state but track settings and commands
+.claude/sessions/
+.claude/todos/
+bin/
+dist/
+/safeclaude
+coverage.out
+coverage.html
