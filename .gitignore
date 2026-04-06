@@ -1,6 +1,6 @@
 .claude*
 bin/
 dist/
-safeclaude
+/safeclaude
 coverage.out
 coverage.html
