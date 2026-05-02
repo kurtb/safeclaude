@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tmux \
     tree htop lsof file \
     build-essential \
+    iptables ipset dnsutils aggregate \
     python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python${PYTHON_VERSION}-dev python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -46,9 +47,18 @@ RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
     && apt-get update && apt-get install -y --no-install-recommends google-cloud-cli \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Firewall script (runs at container start via entrypoint) ──────────
+COPY .devcontainer/init-firewall.sh /usr/local/bin/init-firewall.sh
+COPY .devcontainer/entrypoint.sh   /usr/local/bin/safeclaude-entrypoint
+RUN chmod 0755 /usr/local/bin/init-firewall.sh /usr/local/bin/safeclaude-entrypoint \
+    && chown root:root /usr/local/bin/init-firewall.sh /usr/local/bin/safeclaude-entrypoint
+
 # ── Configure existing ubuntu user ────────────────────────────────────
+# Passwordless sudo is restricted to the firewall script only. The script
+# needs root to install iptables rules; nothing else does.
 RUN chsh -s /usr/bin/zsh ubuntu \
-    && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu
+    && echo "ubuntu ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/ubuntu-firewall \
+    && chmod 0440 /etc/sudoers.d/ubuntu-firewall
 
 USER ubuntu
 WORKDIR /home/ubuntu
@@ -87,4 +97,4 @@ RUN git clone https://github.com/kurtb/dotvim ${HOME}/dev/dotvim \
 RUN mkdir -p /home/ubuntu/workspace
 WORKDIR /home/ubuntu/workspace
 
-ENTRYPOINT ["/usr/bin/zsh"]
+ENTRYPOINT ["/usr/local/bin/safeclaude-entrypoint"]

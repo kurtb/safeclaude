@@ -63,7 +63,11 @@ _safeclaude_run() {
 
   echo "safeclaude: env=${env} workspace=${workspace}"
 
+  # NET_ADMIN + NET_RAW are required for the entrypoint to install the iptables
+  # egress allowlist. Without the firewall, --dangerously-skip-permissions has
+  # no meaningful blast-radius limit.
   docker run -it --rm \
+    --cap-add NET_ADMIN --cap-add NET_RAW \
     -v "${config_dir}:${container_config_dir}" \
     -v "${workspace}:${container_workspace}" \
     -e "CLAUDE_CONFIG_DIR=${container_config_dir}" \
