@@ -105,6 +105,24 @@ ALLOWED_DOMAINS=(
     "archive.ubuntu.com"
     "security.ubuntu.com"
     "ports.ubuntu.com"
+
+    # GitHub web + project pages
+    "github.com"
+    "bitnami-labs.github.io"
+
+    # Tailscale
+    "pkgs.tailscale.com"
+
+    # Kubernetes + Helm
+    "dl.k8s.io"
+    "cdn.dl.k8s.io"
+    "registry.k8s.io"
+    "get.helm.sh"
+
+    # Container registries
+    "ghcr.io"
+    "quay.io"
+    "docker.io"
 )
 
 for domain in "${ALLOWED_DOMAINS[@]}"; do
