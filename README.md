@@ -1,6 +1,6 @@
 # safeclaude
 
-Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) in YOLO mode — `--dangerously-skip-permissions` is fine here because the container has no path to your host filesystem outside the project you mounted, and a default-deny firewall restricts outbound network to an allowlist (Anthropic, OpenAI, Google AI, GitHub, npm, PyPI, gcloud, Pulumi).
+Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) in YOLO mode — `--dangerously-skip-permissions` is fine here because the container has no path to your host filesystem outside the project you mounted, and a default-deny firewall restricts outbound network to an allowlist (Anthropic, OpenAI, Google AI, GitHub, npm, PyPI, gcloud, Pulumi, Kubernetes/Helm, container registries, Tailscale).
 
 ## What's included
 
@@ -74,13 +74,14 @@ safeclaude              # same project dir; reuses the running container via doc
 ## Commands
 
 ```
-safeclaude                   Start/attach for the current dir
-safeclaude <name>            Same, with explicit container/volume name
-safeclaude build [args...]   Rebuild the image (pass-through, e.g. --no-cache)
-safeclaude list              Show all safeclaude containers + volumes
-safeclaude stop [name]       Stop a container (default: current dir's)
-safeclaude rm   [name]       Destroy container + volume (default: current dir's)
-safeclaude help              Show usage
+safeclaude                       Start/attach for the current dir
+safeclaude <name>                Same, with explicit container/volume name
+safeclaude build [args...]       Rebuild the image (pass-through, e.g. --no-cache)
+safeclaude list                  Show all safeclaude containers + volumes
+safeclaude stop     [name]       Stop a container (default: current dir's)
+safeclaude recreate [name]       Replace container from current image, preserving volume
+safeclaude rm       [name]       Destroy container + volume (default: current dir's)
+safeclaude help                  Show usage
 ```
 
 ## Personal skills (dotclaude)
@@ -113,7 +114,10 @@ dotclaude/
 - GitHub's published IP ranges (from `api.github.com/meta`)
 - Anthropic, OpenAI, Google AI / gcloud endpoints
 - npm, PyPI, Ubuntu apt mirrors
-- Pulumi, GitHub auxiliary CDNs (objects, raw, codeload)
+- Pulumi, GitHub auxiliary CDNs (objects, raw, codeload), GitHub Pages
+- Kubernetes (`dl.k8s.io`, `registry.k8s.io`) and Helm (`get.helm.sh`)
+- Container registries (`ghcr.io`, `quay.io`, `docker.io`)
+- Tailscale package mirror
 - Localhost, your Docker host network, DNS, SSH
 
 Egress to anything else is rejected. To allowlist more domains, edit `init-firewall.sh` and rebuild.
@@ -122,7 +126,7 @@ Egress to anything else is rejected. To allowlist more domains, edit `init-firew
 
 Three upgrade paths, depending on tool:
 
-- **Image-controlled** (gh, gcloud, neovim, hadolint, shellcheck, pulumi, codex, firewall script, OS packages) live in `/usr` or `/opt`. `safeclaude build` upgrades them; take effect on next `safeclaude` invocation. Existing volume untouched.
+- **Image-controlled** (gh, gcloud, neovim, hadolint, shellcheck, pulumi, codex, firewall script, OS packages) live in `/usr` or `/opt`. `safeclaude build` produces a new image; `safeclaude recreate` replaces the running container with one from that image while preserving the volume. (`safeclaude` alone reattaches the existing container and won't pick up image changes.)
 - **Self-updating** (Claude Code, Cursor) live in `~/.local/bin` and are seeded into the volume on first container start. They auto-update in the background. `safeclaude build` does NOT refresh them on existing volumes — they keep themselves current, or use `safeclaude rm` for a clean reset (costs a re-auth).
 - **Manual** (Gemini CLI, fnm-managed node) live in the volume but neither auto-update nor are refreshed by image rebuilds. Upgrade via `npm install -g @google/gemini-cli@latest` / `fnm install <version>` inside the container, or wipe with `safeclaude rm`.
 

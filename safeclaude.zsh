@@ -32,6 +32,10 @@ safeclaude() {
       shift
       _safeclaude_rm "$@"
       ;;
+    recreate)
+      shift
+      _safeclaude_recreate "$@"
+      ;;
     --help|-h|help)
       _safeclaude_usage
       ;;
@@ -174,6 +178,31 @@ _safeclaude_rm() {
   echo "done."
 }
 
+# --- recreate --------------------------------------------------------------
+
+_safeclaude_recreate() {
+  # Remove the container (preserving its volume), then run again to pick up
+  # the current image. Useful after `safeclaude build` when you want image
+  # changes (firewall script, tool versions) without losing auth/history.
+  local name_arg="${1:-}"
+  local name="${name_arg:-$(_safeclaude_name_for_pwd)}"
+  local container="$(_safeclaude_container "$name")"
+  local volume="$(_safeclaude_volume "$name")"
+
+  if docker ps -a --format '{{.Names}}' | grep -qx "$container"; then
+    echo "safeclaude: removing container '${container}' (volume '${volume}' preserved)"
+    docker rm -f "$container" >/dev/null || return $?
+  else
+    echo "safeclaude: no container '${container}' to remove; will create fresh"
+  fi
+
+  if [[ -n "$name_arg" ]]; then
+    _safeclaude_run --name "$name_arg"
+  else
+    _safeclaude_run
+  fi
+}
+
 # --- usage -----------------------------------------------------------------
 
 _safeclaude_usage() {
@@ -188,8 +217,9 @@ Without args, operates on the current directory:
 Commands:
   build [docker-args...]    Rebuild the image (pass-through args, e.g. --no-cache)
   list                      Show all safeclaude containers + volumes
-  stop [name]               Stop a container (default: current dir's)
-  rm   [name]               Destroy container + volume (default: current dir's)
+  stop     [name]           Stop a container (default: current dir's)
+  recreate [name]           Replace container from current image, preserving volume
+  rm       [name]           Destroy container + volume (default: current dir's)
   help                      Show this help
 
 Model:
