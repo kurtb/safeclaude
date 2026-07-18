@@ -36,9 +36,9 @@ have python3 && echo "  python $(python3 --version 2>&1 | awk '{print $2}')"
 have gh      && echo "  gh     $(gh --version 2>/dev/null | head -1 | awk '{print $3}')"
 echo
 
-echo "yolo wrappers (in ~/.zshrc):"
+echo "yolo aliases (in ~/.zshrc):"
 for f in yolo-claude yolo-codex yolo-gemini yolo-cursor; do
-    if grep -q "^${f}()" "$HOME/.zshrc" 2>/dev/null; then ok "$f defined"; else bad "$f not in ~/.zshrc"; fi
+    if grep -qE "^alias ${f}=" "$HOME/.zshrc" 2>/dev/null; then ok "$f defined"; else bad "$f not in ~/.zshrc"; fi
 done
 echo
 
@@ -60,7 +60,7 @@ echo "github auth:"
 if gh auth token >/dev/null 2>&1; then
     ok "gh authenticated as $(gh api user --jq .login 2>/dev/null || echo '?')"
 else
-    warns "gh not authenticated yet — run gh-auth-setup (or a yolo-* wrapper)"
+    warns "gh not authenticated — run gh-auth-setup when you need GitHub access"
 fi
 echo
 

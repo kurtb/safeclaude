@@ -60,9 +60,9 @@ yolo-gemini             # gemini --yolo
 yolo-cursor             # agent --force  (Cursor's CLI binary is named `agent`)
 ```
 
-Each `yolo-*` first runs `gh-auth-setup` to make sure the GitHub CLI is
-authenticated, prompting you for a PAT if it isn't (see
-[Credentials](#credentials-github-pat)). It's a no-op once the token is saved.
+Need GitHub access (clone, push, `gh`)? Run `gh-auth-setup` — a manual,
+one-time-per-volume step, not wired into anything (see
+[Credentials](#credentials-github-pat)).
 
 Verify the image is wired up correctly with the built-in smoke test (see
 [Testing a build](#testing-a-build)):
@@ -89,14 +89,14 @@ Coding agents usually need GitHub access (clone, push, `gh`). This is handled by
 an **in-container** script, `gh-auth-setup` — there's no host-side token
 plumbing and nothing is baked into the image or the container's environment.
 
-The `yolo-*` wrappers run it for you before launching an agent:
+It's a manual command — nothing runs it for you, so nothing prompts unless you
+ask. Run it whenever you need GitHub access:
 
 - If gh already has a token (stored in the volume), it's a quiet no-op.
 - Otherwise it prompts you to paste a GitHub PAT, then runs
-  `gh auth login --with-token` + `gh auth setup-git`. Press Enter to skip — the
-  agent still launches, just without GitHub configured.
+  `gh auth login --with-token` + `gh auth setup-git`. Press Enter to skip.
 
-You can also run it directly, or feed it a token non-interactively:
+You can also feed it a token non-interactively:
 
 ```zsh
 gh-auth-setup                    # prompts if gh isn't configured yet

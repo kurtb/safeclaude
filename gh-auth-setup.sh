@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gh-auth-setup — ensure the GitHub CLI is authenticated inside the sandbox.
 #
-# Run it directly, or let the yolo-* wrappers call it before launching an agent.
+# A manual command — nothing runs it for you. Run it when you need GitHub access.
 #   - If gh already has a token, it's a quiet no-op.
 #   - Otherwise it obtains a GitHub PAT from, in order: stdin (piped),
 #     $GH_TOKEN, $GITHUB_TOKEN, or an interactive hidden prompt — then runs
@@ -9,7 +9,7 @@
 #
 # Auth is stored under ~/.config/gh, which lives in the persistent volume, so
 # you normally only do this once per volume. Pressing Enter at the prompt skips
-# setup (exit 0) so the wrappers still launch the agent.
+# setup (exit 0).
 set -uo pipefail
 
 # Already configured? Nothing to do. (Checks for a stored token without a

@@ -229,13 +229,12 @@ Model:
   the floor; the volume preserves auth, shell history, and skills you
   install at runtime.
 
-Inside the container (each yolo-* first runs gh-auth-setup, which ensures
-GitHub auth is configured and prompts for a PAT if it isn't):
+Inside the container:
   yolo-claude   # claude --dangerously-skip-permissions
   yolo-codex    # codex --dangerously-bypass-approvals-and-sandbox
   yolo-gemini   # gemini --yolo
   yolo-cursor   # agent --force
-  gh-auth-setup # configure GitHub auth on its own (also runnable directly)
+  gh-auth-setup # configure GitHub auth (run it yourself when you need it)
   safeclaude-doctor  # smoke-test the build (tools, gstack, gh, firewall)
 EOF
 }

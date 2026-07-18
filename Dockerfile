@@ -214,21 +214,17 @@ RUN mkdir -p ${HOME}/.claude/skills \
          ${HOME}/.claude/skills/gstack \
     && (cd ${HOME}/.claude/skills/gstack && GSTACK_SKIP_FONTS=1 ./setup)
 
-# ── YOLO wrappers for all agents ──────────────────────────────────────
-# Functions (not aliases) so they can first run gh-auth-setup, which ensures
-# GitHub auth is configured — prompting for a PAT if it isn't — before handing
-# off to the agent in its skip-permissions mode. gh-auth-setup is a quiet no-op
-# once the token is stored in the volume, and skipping the prompt still launches
-# the agent, so these stay non-blocking.
+# ── YOLO aliases for all agents ───────────────────────────────────────
+# Skip-permissions launchers for each agent. GitHub auth is deliberately NOT
+# wired in here — run `gh-auth-setup` yourself when you need GitHub access
+# (it lives at /usr/local/bin/gh-auth-setup).
 RUN { \
       echo ''; \
-      echo '# safeclaude: YOLO wrappers — only use inside the safeclaude container.'; \
-      echo '# Each ensures GitHub auth is configured (prompts for a PAT if not),'; \
-      echo '# then launches the agent in its skip-permissions mode.'; \
-      echo 'yolo-claude() { gh-auth-setup; claude --dangerously-skip-permissions "$@"; }'; \
-      echo 'yolo-codex()  { gh-auth-setup; codex --dangerously-bypass-approvals-and-sandbox "$@"; }'; \
-      echo 'yolo-gemini() { gh-auth-setup; gemini --yolo "$@"; }'; \
-      echo 'yolo-cursor() { gh-auth-setup; agent --force "$@"; }'; \
+      echo '# safeclaude: YOLO aliases — only use inside the safeclaude container.'; \
+      echo 'alias yolo-claude="claude --dangerously-skip-permissions"'; \
+      echo 'alias yolo-codex="codex --dangerously-bypass-approvals-and-sandbox"'; \
+      echo 'alias yolo-gemini="gemini --yolo"'; \
+      echo 'alias yolo-cursor="agent --force"'; \
     } >> ${HOME}/.zshrc
 
 # ── Pre-accept Claude Code's bypass-permissions prompt ────────────────
