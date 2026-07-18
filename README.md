@@ -6,15 +6,16 @@ Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) i
 
 | Layer | Details |
 |-------|---------|
-| Base | Ubuntu 24.04 |
+| Base | Ubuntu 24.04 (apt packages upgraded at build time) |
 | Node | v24 via fnm (installed in `~/.local/share/fnm`, lives in the volume) |
+| Bun | Pinned release in `/opt/bun` (system path, refreshed by `safeclaude build`; `bun upgrade` self-updates the volume copy) |
 | Python | 3.12 |
 | Shell | Zsh (via [dotzsh](https://github.com/kurtb/dotzsh)) |
 | Editors | Neovim (latest stable), Vim (via [dotvim](https://github.com/kurtb/dotvim)) |
 | Agents | Claude Code + Cursor (native installers, auto-update, in `~/.local/bin`); Codex (Rust binary from GitHub release, in `/usr/local/bin`, refreshed by `safeclaude build`); Gemini (npm global in `~/.npm-global`, manual `@latest` upgrade) |
-| Skills | [gstack](https://github.com/garrytan/gstack) baked in; personal skills via configurable [`dotclaude`](#personal-skills-dotclaude) repo |
+| Skills | [gstack](https://github.com/garrytan/gstack) baked in — bun and Playwright Chromium (plus its runtime libraries) are included so the full suite works, including the browser-driven skills; personal skills via configurable [`dotclaude`](#personal-skills-dotclaude) repo |
 | Cloud | Google Cloud CLI, Pulumi (both in system paths) |
-| Tools | git, git-delta, gh (GitHub CLI), ripgrep, fzf, jq, build-essential, tmux |
+| Tools | git, git-delta, gh (GitHub CLI), ripgrep, fzf, jq, less, build-essential, tmux |
 | Linters | shellcheck, hadolint |
 | Network | iptables/ipset default-deny firewall (allowlist applied at container start) |
 | User | `ubuntu` (uid 1000), **no general sudo** — only `init-firewall.sh`, zsh login shell |
@@ -59,6 +60,17 @@ yolo-gemini             # gemini --yolo
 yolo-cursor             # agent --force  (Cursor's CLI binary is named `agent`)
 ```
 
+Each `yolo-*` first runs `gh-auth-setup` to make sure the GitHub CLI is
+authenticated, prompting you for a PAT if it isn't (see
+[Credentials](#credentials-github-pat)). It's a no-op once the token is saved.
+
+Verify the image is wired up correctly with the built-in smoke test (see
+[Testing a build](#testing-a-build)):
+
+```zsh
+safeclaude-doctor       # checks tools, yolo wrappers, gstack, gh auth, firewall
+```
+
 `yolo-claude` skips Claude Code's one-time "bypass permissions mode" acceptance
 prompt — the image ships `~/.claude/settings.json` with
 `skipDangerousModePermissionPrompt: true`. This is seeded into fresh volumes on
@@ -70,6 +82,32 @@ Open a second shell into the same container (e.g. parallel worker):
 ```zsh
 safeclaude              # same project dir; reuses the running container via docker exec
 ```
+
+## Credentials (GitHub PAT)
+
+Coding agents usually need GitHub access (clone, push, `gh`). This is handled by
+an **in-container** script, `gh-auth-setup` — there's no host-side token
+plumbing and nothing is baked into the image or the container's environment.
+
+The `yolo-*` wrappers run it for you before launching an agent:
+
+- If gh already has a token (stored in the volume), it's a quiet no-op.
+- Otherwise it prompts you to paste a GitHub PAT, then runs
+  `gh auth login --with-token` + `gh auth setup-git`. Press Enter to skip — the
+  agent still launches, just without GitHub configured.
+
+You can also run it directly, or feed it a token non-interactively:
+
+```zsh
+gh-auth-setup                    # prompts if gh isn't configured yet
+echo "$PAT" | gh-auth-setup      # or pipe a token in
+GH_TOKEN=ghp_xxx gh-auth-setup   # or via $GH_TOKEN / $GITHUB_TOKEN
+```
+
+Auth is stored under `~/.config/gh` in the persistent volume, so it survives
+`recreate` and image rebuilds — you normally configure it once per volume
+(re-run any time to rotate). The token is only ever read from stdin, env, or the
+hidden prompt; it never lands in the container's env or `docker inspect`.
 
 ## Commands
 
@@ -113,7 +151,7 @@ dotclaude/
 
 - GitHub's published IP ranges (from `api.github.com/meta`)
 - Anthropic, OpenAI, Google AI / gcloud endpoints
-- npm, PyPI, Ubuntu apt mirrors
+- npm, PyPI, Bun, Ubuntu apt mirrors
 - Pulumi, GitHub auxiliary CDNs (objects, raw, codeload), GitHub Pages
 - Kubernetes (`dl.k8s.io`, `registry.k8s.io`) and Helm (`get.helm.sh`)
 - Container registries (`ghcr.io`, `quay.io`, `docker.io`)
@@ -126,9 +164,38 @@ Egress to anything else is rejected. To allowlist more domains, edit `init-firew
 
 Three upgrade paths, depending on tool:
 
-- **Image-controlled** (gh, gcloud, neovim, hadolint, shellcheck, pulumi, codex, firewall script, OS packages) live in `/usr` or `/opt`. `safeclaude build` produces a new image; `safeclaude recreate` replaces the running container with one from that image while preserving the volume. (`safeclaude` alone reattaches the existing container and won't pick up image changes.)
+- **Image-controlled** (gh, gcloud, neovim, hadolint, shellcheck, pulumi, codex, bun, firewall script, OS packages) live in `/usr` or `/opt`. `safeclaude build` produces a new image; `safeclaude recreate` replaces the running container with one from that image while preserving the volume. (`safeclaude` alone reattaches the existing container and won't pick up image changes.)
 - **Self-updating** (Claude Code, Cursor) live in `~/.local/bin` and are seeded into the volume on first container start. They auto-update in the background. `safeclaude build` does NOT refresh them on existing volumes — they keep themselves current, or use `safeclaude rm` for a clean reset (costs a re-auth).
 - **Manual** (Gemini CLI, fnm-managed node) live in the volume but neither auto-update nor are refreshed by image rebuilds. Upgrade via `npm install -g @google/gemini-cli@latest` / `fnm install <version>` inside the container, or wipe with `safeclaude rm`.
+
+## Testing a build
+
+After `safeclaude build`, verify the image from inside a container with the
+bundled smoke test:
+
+```zsh
+safeclaude-doctor
+```
+
+It checks that the expected tools are on `PATH`, the `yolo-*` wrappers are
+defined, gstack is cloned (and its `browse` binary built), Playwright Chromium
+is installed, GitHub auth status, and — crucially — that the firewall both
+**blocks** an unlisted host and **allows** GitHub. It exits non-zero if any hard
+check fails, so it works as a CI-style gate.
+
+Mind the [state model](#state-and-upgrades) when testing: system-path additions
+(bun, `less`, `gh-auth-setup`, `safeclaude-doctor`) show up after
+`safeclaude recreate`, but volume-seeded changes (gstack skills, the `yolo-*`
+functions in `~/.zshrc`) only appear in a **fresh volume**. To exercise a build
+end-to-end without disturbing a project's volume, use a throwaway name:
+
+```zsh
+cd /tmp
+safeclaude dr-test        # fresh container + volume from the new image
+safeclaude-doctor         # run the checks inside it
+exit
+safeclaude rm dr-test     # clean up
+```
 
 ## Manual docker invocation
 
