@@ -10,7 +10,10 @@
 #   - State (auth, history, skills installed at runtime) lives in the named
 #     volume and survives image rebuilds.
 
-_SAFECLAUDE_IMAGE="safeclaud:latest"
+# Image to run. Defaults to the locally built image; override to use the
+# published one, e.g. export SAFECLAUDE_IMAGE=ghcr.io/kurtb/safeclaude:latest
+# (docker run auto-pulls it if it's not present locally).
+_SAFECLAUDE_IMAGE="${SAFECLAUDE_IMAGE:-safeclaud:latest}"
 _SAFECLAUDE_DIR="${${(%):-%x}:A:h}"
 
 safeclaude() {

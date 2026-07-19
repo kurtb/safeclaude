@@ -197,6 +197,34 @@ exit
 safeclaude rm dr-test     # clean up
 ```
 
+## Published image (GHCR)
+
+A GitHub Actions workflow ([`.github/workflows/publish.yml`](.github/workflows/publish.yml))
+builds a multi-arch (amd64 + arm64) image and pushes it to
+`ghcr.io/kurtb/safeclaude`, so you can skip the ~10-minute local build:
+
+```zsh
+docker pull ghcr.io/kurtb/safeclaude:latest
+export SAFECLAUDE_IMAGE=ghcr.io/kurtb/safeclaude:latest   # tell the wrapper to use it
+safeclaude
+```
+
+`SAFECLAUDE_IMAGE` overrides the image the wrapper runs (default:
+`safeclaud:latest`, your local build). `docker run` auto-pulls it if it's not
+present. Each arch is built on its own **native** runner (not QEMU) because
+gstack's setup launches Chromium during the build.
+
+Tags / release process:
+
+| Trigger | Tags published |
+|---------|----------------|
+| push to `main` | `:latest`, `:sha-<short>` |
+| push a tag `vX.Y.Z` | `:X.Y.Z`, `:X.Y` (pinned release) |
+| "Run workflow" button | same as the ref it runs from |
+
+> The first successful publish creates the GHCR package as **private** — flip it
+> to Public once under Packages → `safeclaude` → Settings to match the repo.
+
 ## Manual docker invocation
 
 If you don't want to use the wrapper:
