@@ -28,6 +28,7 @@ One container + one Docker volume per project directory.
 - The named volume is mounted at `/home/ubuntu` and seeded from the image on first run. It persists auth tokens, shell history, project memory, and any skills you install at runtime. Rebuilding the image upgrades the *floor* of tool versions; the volume keeps your state.
 - The current directory is bind-mounted at `/home/ubuntu/workspace/<name>` so the agent can edit your source. Nothing else on your host is reachable.
 - The firewall (`init-firewall.sh`) runs at every container start because iptables state is per-runtime. Requires `--cap-add NET_ADMIN --cap-add NET_RAW`.
+- Containers run with `--init` (tini as PID 1) so orphaned agent subprocesses are reaped instead of accumulating as zombies — the entrypoint is `sleep infinity`, which never would.
 
 ## Quickstart
 
@@ -232,6 +233,7 @@ If you don't want to use the wrapper:
 ```bash
 docker volume create safeclaude-myproj
 docker run -d --name safeclaude-myproj \
+  --init \
   --cap-add NET_ADMIN --cap-add NET_RAW \
   -v safeclaude-myproj:/home/ubuntu \
   -v "$PWD:/home/ubuntu/workspace/myproj" \

@@ -111,7 +111,11 @@ _safeclaude_run() {
   fi
 
   echo "safeclaude: launching new container '${container}' (workspace=${workspace})"
+  # --init runs tini as PID 1 so orphaned processes (e.g. agent subprocesses
+  # left behind by docker exec sessions) get reaped instead of piling up as
+  # zombies — the entrypoint's `exec sleep infinity` would never reap them.
   docker run -d \
+    --init \
     --name "$container" \
     --cap-add NET_ADMIN --cap-add NET_RAW \
     -v "${volume}:/home/ubuntu" \
