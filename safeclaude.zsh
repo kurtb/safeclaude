@@ -242,6 +242,7 @@ Inside the container:
   yolo-gemini   # gemini --yolo
   yolo-cursor   # agent --force
   gh-auth-setup # configure GitHub auth (run it yourself when you need it)
+  tailscale-up  # connect to your tailnet (userspace mode; proxy on :1055)
   safeclaude-doctor  # smoke-test the build (tools, gstack, gh, firewall)
 EOF
 }

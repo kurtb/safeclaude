@@ -24,7 +24,8 @@ echo
 
 echo "tools on PATH:"
 for t in bun node python3 git gh claude codex gemini agent pulumi gcloud \
-         nvim rg fzf jq delta shellcheck hadolint less gh-auth-setup; do
+         nvim rg fzf jq delta shellcheck hadolint less \
+         gh-auth-setup tailscale tailscaled tailscale-up; do
     if have "$t"; then ok "$t"; else bad "$t missing"; fi
 done
 echo

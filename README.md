@@ -156,10 +156,48 @@ dotclaude/
 - Pulumi, GitHub auxiliary CDNs (objects, raw, codeload), GitHub Pages
 - Kubernetes (`dl.k8s.io`, `registry.k8s.io`) and Helm (`get.helm.sh`)
 - Container registries (`ghcr.io`, `quay.io`, `docker.io`)
-- Tailscale package mirror
+- Tailscale: package mirror, coordination/login (`controlplane`/`login.tailscale.com`), and the DERP relay IPs (fetched from the published DERP map — see [Tailscale](#tailscale))
 - Localhost, your Docker host network, DNS, SSH
 
 Egress to anything else is rejected. To allowlist more domains, edit `init-firewall.sh` and rebuild.
+
+## Tailscale
+
+Tailscale is installed and runs in **userspace-networking mode** — as the
+`ubuntu` user, with no root, no TUN device, and no new sudo — so it preserves
+the container's "only `init-firewall` is privileged" boundary. Connect with:
+
+```zsh
+tailscale-up                       # prints a login URL to open in your browser
+TS_AUTHKEY=tskey-… tailscale-up    # or connect non-interactively with an auth key
+```
+
+`tailscale-up` starts `tailscaled` and runs `tailscale up` (extra args pass
+through, e.g. `--hostname`, `--ssh`, `--accept-routes`). Auth state lives in
+`~/.tailscale` on the volume, so you normally connect once.
+
+Because it's userspace mode, there's no transparent `tailscale0` interface —
+instead you get a **SOCKS5 + HTTP proxy on `localhost:1055`**. Point tools at it
+to reach tailnet hosts:
+
+```zsh
+ALL_PROXY=socks5://localhost:1055 curl http://my-tailnet-host/
+HTTPS_PROXY=http://localhost:1055 gh api ...
+```
+
+The `tailscale` CLI is aliased in `~/.zshrc` to talk to the userspace daemon's
+socket, so `tailscale status` etc. just work.
+
+Egress works because the firewall allowlists Tailscale's coordination/login
+hosts and DERP relay IPs. In this locked-down environment direct peer
+connections (UDP to arbitrary IPs) are blocked, so traffic **relays through
+DERP** over `:443` — reliable, just not the lowest-latency direct path.
+
+> **Want transparent routing instead?** That needs a real TUN device
+> (`--device /dev/net/tun` on `docker run`) **and** running `tailscaled` as root
+> (a sudoers exception) — which widens the privilege boundary this sandbox
+> deliberately keeps narrow. It's intentionally not the default; ask if you want
+> that variant wired up.
 
 ## State and upgrades
 
