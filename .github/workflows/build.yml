@@ -1,0 +1,54 @@
+name: Build
+
+# Verifies the image builds — it does NOT publish. Publishing to GHCR happens
+# only in publish.yml, on merge to main / v* tags. This check runs on PRs so a
+# broken Dockerfile can't reach main (where it would break that publish).
+#
+# Each architecture builds on its own native runner (not QEMU) because gstack's
+# setup launches Chromium during the build, which is slow/flaky under emulation.
+# The arches run in parallel, so wall-clock ≈ a single build, and this catches
+# arch-specific breakage (per-arch binary downloads, etc.) before it lands.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: Compute platform slug
+        id: prep
+        run: echo "slug=${PLATFORM//\//-}" >> "$GITHUB_OUTPUT"
+        env:
+          PLATFORM: ${{ matrix.platform }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: false
+          cache-from: type=gha,scope=${{ steps.prep.outputs.slug }}
+          cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.slug }}
+          provenance: false
