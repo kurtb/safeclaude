@@ -115,10 +115,11 @@ hidden prompt; it never lands in the container's env or `docker inspect`.
 ```
 safeclaude                       Start/attach for the current dir
 safeclaude <name>                Same, with explicit container/volume name
-safeclaude build [args...]       Rebuild the image (pass-through, e.g. --no-cache)
+safeclaude build [args...]       Rebuild the image (checkout only; pass-through, e.g. --no-cache)
+safeclaude pull                  Pull the latest published image (if using GHCR)
 safeclaude list                  Show all safeclaude containers + volumes
 safeclaude stop     [name]       Stop a container (default: current dir's)
-safeclaude recreate [name]       Replace container from current image, preserving volume
+safeclaude recreate [name]       Update image (pull if remote) + replace container, keep volume
 safeclaude rm       [name]       Destroy container + volume (default: current dir's)
 safeclaude help                  Show usage
 ```
@@ -163,9 +164,23 @@ Egress to anything else is rejected. To allowlist more domains, edit `init-firew
 
 ## State and upgrades
 
+**Which image does the wrapper run?** It resolves in this order: `$SAFECLAUDE_IMAGE`
+if set; else the local build tag `safeclaud:latest` when sourced from a checkout
+(there's a `Dockerfile` next to `safeclaude.zsh`); else the published
+`ghcr.io/kurtb/safeclaude:latest`. So a cloned repo uses your local build, while
+a standalone install rides the published image.
+
+**Updating the image** — `safeclaude recreate` is the update path for both flows.
+When the image is a registry reference (GHCR), it **pulls the latest first**,
+then replaces the container while preserving the volume. `safeclaude pull` pulls
+without replacing. For the local flow, `safeclaude build` produces a new
+`safeclaud:latest` and `recreate` (no pull — nothing remote) rolls onto it.
+(`safeclaude` alone reattaches the existing container and won't pick up image
+changes.)
+
 Three upgrade paths, depending on tool:
 
-- **Image-controlled** (gh, gcloud, neovim, hadolint, shellcheck, pulumi, codex, bun, firewall script, OS packages) live in `/usr` or `/opt`. `safeclaude build` produces a new image; `safeclaude recreate` replaces the running container with one from that image while preserving the volume. (`safeclaude` alone reattaches the existing container and won't pick up image changes.)
+- **Image-controlled** (gh, gcloud, neovim, hadolint, shellcheck, pulumi, codex, bun, tailscale, firewall script, OS packages) live in `/usr` or `/opt`. Refreshed by a new image — `safeclaude build` (checkout) or a new GHCR publish — applied with `safeclaude recreate`.
 - **Self-updating** (Claude Code, Cursor) live in `~/.local/bin` and are seeded into the volume on first container start. They auto-update in the background. `safeclaude build` does NOT refresh them on existing volumes — they keep themselves current, or use `safeclaude rm` for a clean reset (costs a re-auth).
 - **Manual** (Gemini CLI, fnm-managed node) live in the volume but neither auto-update nor are refreshed by image rebuilds. Upgrade via `npm install -g @google/gemini-cli@latest` / `fnm install <version>` inside the container, or wipe with `safeclaude rm`.
 
