@@ -20,9 +20,11 @@ ENV NPM_CONFIG_PREFIX=/home/ubuntu/.npm-global
 ENV PATH=/home/ubuntu/.local/bin:${NPM_CONFIG_PREFIX}/bin:${FNM_DIR}/aliases/default/bin:${PATH}
 
 # ── Core packages (main only — no universe) ──────────────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     ca-certificates curl gnupg git openssh-client sudo rsync \
-    zsh fzf ripgrep jq unzip wget xz-utils \
+    zsh fzf ripgrep jq unzip wget xz-utils less \
     tmux \
     tree htop lsof file \
     build-essential \
@@ -103,10 +105,37 @@ RUN ARCH=$(uname -m) \
     && install -m 0755 /tmp/codex-${ARCH}-unknown-linux-musl /usr/local/bin/codex \
     && rm -rf /tmp/codex.tar.gz /tmp/codex-${ARCH}-unknown-linux-musl
 
+# ── Bun (system path; doesn't self-update the system copy) ────────────
+# Required by gstack's setup, and a fast Node-compatible runtime/package
+# manager in its own right. Installed to /opt/bun and symlinked onto PATH so
+# `safeclaude build` controls the version (like pulumi/codex). Bump BUN_VERSION
+# to upgrade; `bun upgrade` inside the container can also self-update the copy
+# seeded into the volume.
+ARG BUN_VERSION=1.3.10
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/opt/bun bash -s -- "bun-v${BUN_VERSION}" \
+    && ln -sf /opt/bun/bin/bun  /usr/local/bin/bun \
+    && ln -sf /opt/bun/bin/bunx /usr/local/bin/bunx
+
+# ── Playwright / Chromium runtime libraries (for gstack browser skills) ─
+# gstack's setup launches Playwright Chromium; without these shared libraries
+# the launch fails — and gstack is now a hard build dependency, so that would
+# fail the build. This is the apt equivalent of `playwright install-deps`; the
+# exact list is from Playwright's own host-validation output on Ubuntu 24.04.
+# All are in main (no universe), preserving the image's main-only invariant.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0t64 libnspr4 libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 \
+    libdbus-1-3 libcups2t64 libxcb1 libxkbcommon0 libatspi2.0-0t64 \
+    libx11-6 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 \
+    libgbm1 libcairo2 libpango-1.0-0 libasound2t64 \
+    && rm -rf /var/lib/apt/lists/*
+
 # ── Firewall script + sudoers exception ───────────────────────────────
-COPY init-firewall.sh /usr/local/bin/init-firewall.sh
-COPY entrypoint.sh    /usr/local/bin/entrypoint.sh
+COPY init-firewall.sh    /usr/local/bin/init-firewall.sh
+COPY entrypoint.sh       /usr/local/bin/entrypoint.sh
+COPY gh-auth-setup.sh    /usr/local/bin/gh-auth-setup
+COPY safeclaude-doctor.sh /usr/local/bin/safeclaude-doctor
 RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh \
+             /usr/local/bin/gh-auth-setup /usr/local/bin/safeclaude-doctor \
     && echo "ubuntu ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" \
        > /etc/sudoers.d/ubuntu-firewall \
     && chmod 0440 /etc/sudoers.d/ubuntu-firewall
@@ -173,13 +202,22 @@ RUN git clone --depth 1 --branch ${DOTCLAUDE_REF} ${DOTCLAUDE_REPO} ${HOME}/dev/
  || echo "dotclaude repo (${DOTCLAUDE_REPO}@${DOTCLAUDE_REF}) not available; skipping"
 
 # ── gstack (Garry Tan's Claude skills) ────────────────────────────────
+# setup requires bun (installed above), builds the browse binary + skill docs,
+# then downloads Playwright Chromium and tries to launch it.
+#
+# A non-zero exit from setup FAILS THE BUILD by design — no `|| echo` swallow —
+# so a broken gstack install surfaces its real error instead of silently
+# shipping half-installed. GSTACK_SKIP_FONTS=1 skips a sudo-less apt font
+# install that would otherwise just warn.
 RUN mkdir -p ${HOME}/.claude/skills \
     && git clone --single-branch --depth 1 https://github.com/garrytan/gstack \
          ${HOME}/.claude/skills/gstack \
-    && (cd ${HOME}/.claude/skills/gstack && ./setup) \
- || echo "gstack install failed; skipping"
+    && (cd ${HOME}/.claude/skills/gstack && GSTACK_SKIP_FONTS=1 ./setup)
 
-# ── YOLO aliases for all three agents ─────────────────────────────────
+# ── YOLO aliases for all agents ───────────────────────────────────────
+# Skip-permissions launchers for each agent. GitHub auth is deliberately NOT
+# wired in here — run `gh-auth-setup` yourself when you need GitHub access
+# (it lives at /usr/local/bin/gh-auth-setup).
 RUN { \
       echo ''; \
       echo '# safeclaude: YOLO aliases — only use inside the safeclaude container.'; \

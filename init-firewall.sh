@@ -92,6 +92,9 @@ ALLOWED_DOMAINS=(
     "pypi.org"
     "files.pythonhosted.org"
 
+    # Bun (self-update / version check; installs come from npm + GitHub)
+    "bun.sh"
+
     # GitHub auxiliary (CDN + raw + downloads not covered by api.github.com/meta)
     "objects.githubusercontent.com"
     "codeload.github.com"

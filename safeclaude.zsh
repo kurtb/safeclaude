@@ -10,7 +10,10 @@
 #   - State (auth, history, skills installed at runtime) lives in the named
 #     volume and survives image rebuilds.
 
-_SAFECLAUDE_IMAGE="safeclaud:latest"
+# Image to run. Defaults to the locally built image; override to use the
+# published one, e.g. export SAFECLAUDE_IMAGE=ghcr.io/kurtb/safeclaude:latest
+# (docker run auto-pulls it if it's not present locally).
+_SAFECLAUDE_IMAGE="${SAFECLAUDE_IMAGE:-safeclaud:latest}"
 _SAFECLAUDE_DIR="${${(%):-%x}:A:h}"
 
 safeclaude() {
@@ -108,7 +111,11 @@ _safeclaude_run() {
   fi
 
   echo "safeclaude: launching new container '${container}' (workspace=${workspace})"
+  # --init runs tini as PID 1 so orphaned processes (e.g. agent subprocesses
+  # left behind by docker exec sessions) get reaped instead of piling up as
+  # zombies — the entrypoint's `exec sleep infinity` would never reap them.
   docker run -d \
+    --init \
     --name "$container" \
     --cap-add NET_ADMIN --cap-add NET_RAW \
     -v "${volume}:/home/ubuntu" \
@@ -234,5 +241,7 @@ Inside the container:
   yolo-codex    # codex --dangerously-bypass-approvals-and-sandbox
   yolo-gemini   # gemini --yolo
   yolo-cursor   # agent --force
+  gh-auth-setup # configure GitHub auth (run it yourself when you need it)
+  safeclaude-doctor  # smoke-test the build (tools, gstack, gh, firewall)
 EOF
 }
