@@ -58,6 +58,22 @@ while read -r cidr; do
     ipset add allowed-domains "$cidr"
 done < <(echo "$gh_ranges" | jq -r '(.web + .api + .git)[]' | aggregate -q)
 
+# Tailscale DERP relay servers (best-effort). In this locked-down egress
+# environment, direct peer connections (UDP to arbitrary peer IPs) are blocked,
+# so Tailscale traffic relays through DERP over TCP 443 — allowlist those server
+# IPs from the published DERP map. A failure here only limits Tailscale relaying.
+echo "Fetching Tailscale DERP server IPs..."
+derp_map=$(curl -s https://login.tailscale.com/derpmap/default || true)
+if echo "$derp_map" | jq -e '.Regions' >/dev/null 2>&1; then
+    while read -r ip; do
+        if [[ "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+            ipset add allowed-domains "$ip" 2>/dev/null || true
+        fi
+    done < <(echo "$derp_map" | jq -r '.Regions[].Nodes[].IPv4 // empty')
+else
+    echo "WARNING: could not fetch Tailscale DERP map (relay connectivity may be limited)"
+fi
+
 # Domain allowlist. Resolved at container start; if any of these change IPs
 # mid-session, restart the container to refresh.
 ALLOWED_DOMAINS=(
@@ -113,8 +129,10 @@ ALLOWED_DOMAINS=(
     "github.com"
     "bitnami-labs.github.io"
 
-    # Tailscale
+    # Tailscale (apt mirror + coordination/login; DERP relay IPs fetched above)
     "pkgs.tailscale.com"
+    "controlplane.tailscale.com"
+    "login.tailscale.com"
 
     # Kubernetes + Helm
     "dl.k8s.io"

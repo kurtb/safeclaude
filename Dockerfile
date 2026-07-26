@@ -129,13 +129,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgbm1 libcairo2 libpango-1.0-0 libasound2t64 \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Tailscale (userspace mode; run `tailscale-up` inside the container) ─
+# From Tailscale's apt repo. We run tailscaled in userspace-networking mode as
+# the ubuntu user — no root, no TUN device, no new sudo — so it preserves the
+# container's "only init-firewall is privileged" boundary (see tailscale-up).
+# policy-rc.d stops the package postinst from starting a systemd service (there
+# is no systemd in the container).
+RUN curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
+      -o /usr/share/keyrings/tailscale-archive-keyring.gpg \
+    && curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list \
+      -o /etc/apt/sources.list.d/tailscale.list \
+    && printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d && chmod +x /usr/sbin/policy-rc.d \
+    && apt-get update && apt-get install -y --no-install-recommends tailscale \
+    && rm -f /usr/sbin/policy-rc.d \
+    && rm -rf /var/lib/apt/lists/*
+
 # ── Firewall script + sudoers exception ───────────────────────────────
 COPY init-firewall.sh    /usr/local/bin/init-firewall.sh
 COPY entrypoint.sh       /usr/local/bin/entrypoint.sh
 COPY gh-auth-setup.sh    /usr/local/bin/gh-auth-setup
 COPY safeclaude-doctor.sh /usr/local/bin/safeclaude-doctor
+COPY tailscale-up.sh     /usr/local/bin/tailscale-up
 RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh \
              /usr/local/bin/gh-auth-setup /usr/local/bin/safeclaude-doctor \
+             /usr/local/bin/tailscale-up \
     && echo "ubuntu ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" \
        > /etc/sudoers.d/ubuntu-firewall \
     && chmod 0440 /etc/sudoers.d/ubuntu-firewall
@@ -225,6 +242,10 @@ RUN { \
       echo 'alias yolo-codex="codex --dangerously-bypass-approvals-and-sandbox"'; \
       echo 'alias yolo-gemini="gemini --yolo"'; \
       echo 'alias yolo-cursor="agent --force"'; \
+      echo ''; \
+      echo '# safeclaude: point the tailscale CLI at the userspace daemon socket'; \
+      echo '# (tailscale-up runs tailscaled in userspace mode on this socket).'; \
+      echo 'alias tailscale="command tailscale --socket=$HOME/.tailscale/tailscaled.sock"'; \
     } >> ${HOME}/.zshrc
 
 # ── Pre-accept Claude Code's bypass-permissions prompt ────────────────
