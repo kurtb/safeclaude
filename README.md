@@ -264,6 +264,11 @@ Tags / release process:
 > The first successful publish creates the GHCR package as **private** — flip it
 > to Public once under Packages → `safeclaude` → Settings to match the repo.
 
+Pull requests are gated by a separate build check
+([`.github/workflows/build.yml`](.github/workflows/build.yml)) that builds the
+image for both arches **without publishing**, so a broken Dockerfile can't reach
+`main`.
+
 ## Manual docker invocation
 
 If you don't want to use the wrapper:
