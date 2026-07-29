@@ -258,8 +258,19 @@ Tags / release process:
 | Trigger | Tags published |
 |---------|----------------|
 | push to `main` | `:latest`, `:sha-<short>` |
-| push a tag `vX.Y.Z` | `:X.Y.Z`, `:X.Y` (pinned release) |
+| a `vX.Y.Z` tag | `:X.Y.Z`, `:X.Y`, `:X` (SemVer, rolling) |
 | "Run workflow" button | same as the ref it runs from |
+
+Every merge to `main` keeps `:latest` current and adds an immutable
+`:sha-<short>`. **Cut a named release** with the **Release** workflow
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) — from the
+Actions tab, "Run workflow", pick a bump (`patch`/`minor`/`major`) or type an
+explicit version. It computes the next SemVer tag, creates the git tag + a
+GitHub Release with generated notes, and triggers the publish. (For the first
+release pick `minor` → `v0.1.0`.) Versioning follows SemVer: **patch** = fixes /
+tool bumps, **minor** = new capability (tool/command), **major** = a change to
+how you use it (removed/renamed command, changed volume model). You can still
+tag by hand (`git tag v0.1.0 && git push origin v0.1.0`) if you prefer.
 
 > The first successful publish creates the GHCR package as **private** — flip it
 > to Public once under Packages → `safeclaude` → Settings to match the repo.
