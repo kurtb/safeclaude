@@ -82,7 +82,8 @@ jobs:
           gh release create "$NEXT" \
             --target "$GITHUB_SHA" \
             --title "$NEXT" \
-            --generate-notes
+            --generate-notes \
+            install.sh safeclaude.zsh
 
       - name: Trigger image publish for the tag
         env:

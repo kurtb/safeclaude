@@ -20,6 +20,59 @@ Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) i
 | Network | iptables/ipset default-deny firewall (allowlist applied at container start) |
 | User | `ubuntu` (uid 1000), **no general sudo** — only `init-firewall.sh`, zsh login shell |
 
+## Install
+
+Run safeclaude **without cloning** — the installer drops the host-side wrapper
+on your machine and points it at the published image
+(`ghcr.io/kurtb/safeclaude`):
+
+```zsh
+curl -fsSL https://github.com/kurtb/safeclaude/releases/latest/download/install.sh | bash
+```
+
+It writes `safeclaude.zsh` to `~/.local/share/safeclaude/` and adds a marked
+block to your `~/.zshrc` that sources it and sets
+`SAFECLAUDE_IMAGE=ghcr.io/kurtb/safeclaude:latest` (re-running just updates the
+block). Open a new shell, then:
+
+```zsh
+cd ~/my-project
+safeclaude       # first run pulls the image (docker login ghcr.io first if it's private)
+```
+
+Requires Docker. Env overrides: `SAFECLAUDE_VERSION` (see below),
+`SAFECLAUDE_IMAGE`, `SAFECLAUDE_HOME`, `SAFECLAUDE_RC`.
+
+> Before the first release exists, install from `main`:
+> `curl -fsSL https://raw.githubusercontent.com/kurtb/safeclaude/main/install.sh | bash`
+
+### Pinning and upgrading
+
+Pick how much you want to float, then how you upgrade:
+
+| You want | How | Upgrade |
+|----------|-----|---------|
+| **Newest, always** (default) | plain install → wrapper from the latest release, image `:latest` | `safeclaude recreate` (pulls newest, keeps your volume) |
+| **A rolling minor/major** | set the image tag to `:0.2` or `:0` — e.g. `SAFECLAUDE_IMAGE=ghcr.io/kurtb/safeclaude:0.2` | `safeclaude recreate` gets patches within that line, never jumps minor/major |
+| **An exact version** | prefix the install with `SAFECLAUDE_VERSION=0.2.0` → wrapper **and** image pinned to `0.2.0` | re-run the installer with a newer `SAFECLAUDE_VERSION` (a deliberate bump) |
+
+So a pinned install never drifts — `safeclaude recreate` on an immutable `:0.2.0`
+is a no-op — and you upgrade by re-installing at the version you choose. This is
+the usual pattern: exact pins for reproducibility, the `:X` / `:X.Y` rolling tags
+(which the [release process](#published-image-ghcr) publishes) when you want
+patches but not surprises, and `:latest` to always ride the newest.
+
+**Two things update, separately:**
+
+- the **wrapper** (this host script) — `safeclaude upgrade` (re-runs the
+  installer for a standalone install, or `git pull` for a checkout); re-source
+  your shell afterward. Set `SAFECLAUDE_VERSION` to move to a specific version.
+- the **image** — `safeclaude recreate` (pulls the newest matching tag, keeps
+  your volume).
+
+To **build the image yourself** or hack on safeclaude, clone the repo instead —
+see [Quickstart](#quickstart).
+
 ## Model
 
 One container + one Docker volume per project directory.
@@ -31,6 +84,9 @@ One container + one Docker volume per project directory.
 - Containers run with `--init` (tini as PID 1) so orphaned agent subprocesses are reaped instead of accumulating as zombies — the entrypoint is `sleep infinity`, which never would.
 
 ## Quickstart
+
+This is the **clone + build** path — for developing safeclaude or building the
+image locally. To just *use* it, see [Install](#install).
 
 Source the helper in your `.zshrc`:
 
@@ -117,6 +173,7 @@ safeclaude                       Start/attach for the current dir
 safeclaude <name>                Same, with explicit container/volume name
 safeclaude build [args...]       Rebuild the image (checkout only; pass-through, e.g. --no-cache)
 safeclaude pull                  Pull the latest published image (if using GHCR)
+safeclaude upgrade               Update the wrapper itself (git pull, or re-run installer)
 safeclaude list                  Show all safeclaude containers + volumes
 safeclaude stop     [name]       Stop a container (default: current dir's)
 safeclaude recreate [name]       Update image (pull if remote) + replace container, keep volume

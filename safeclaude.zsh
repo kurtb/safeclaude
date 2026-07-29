@@ -68,6 +68,9 @@ safeclaude() {
     pull|update)
       _safeclaude_maybe_pull
       ;;
+    upgrade|self-update)
+      _safeclaude_upgrade
+      ;;
     --help|-h|help)
       _safeclaude_usage
       ;;
@@ -249,6 +252,34 @@ _safeclaude_recreate() {
   fi
 }
 
+# --- upgrade ---------------------------------------------------------------
+
+_safeclaude_upgrade() {
+  # Update the safeclaude WRAPPER itself (the host script) — not a container
+  # image; use `safeclaude recreate` for that. A checkout (Dockerfile present,
+  # like `build`) updates via git pull; a standalone install re-runs the
+  # installer. Re-source your shell afterward to load the new wrapper.
+  if [[ -f "$_SAFECLAUDE_DIR/Dockerfile" ]]; then
+    echo "safeclaude: updating checkout at ${_SAFECLAUDE_DIR}"
+    git -C "$_SAFECLAUDE_DIR" pull --ff-only || return $?
+    echo "safeclaude: re-source it (or open a new shell):  source ${_SAFECLAUDE_DIR}/safeclaude.zsh"
+    echo "safeclaude: rebuild the image with:  safeclaude build"
+  else
+    echo "safeclaude: re-running the installer (set SAFECLAUDE_VERSION to pin)"
+    # Download first, then run — piping curl into bash would hide a failed
+    # download (bash reads empty stdin and exits 0). Forward SAFECLAUDE_VERSION
+    # explicitly so an unexported value still reaches the installer.
+    local tmp; tmp="$(mktemp)"
+    if ! curl -fsSL https://raw.githubusercontent.com/kurtb/safeclaude/main/install.sh -o "$tmp"; then
+      rm -f "$tmp"; echo "safeclaude: failed to download the installer" >&2; return 1
+    fi
+    SAFECLAUDE_VERSION="${SAFECLAUDE_VERSION:-}" bash "$tmp"; local rc=$?
+    rm -f "$tmp"
+    (( rc == 0 )) || return $rc
+    echo "safeclaude: re-source your shell (or open a new shell) to load the new wrapper"
+  fi
+}
+
 # --- usage -----------------------------------------------------------------
 
 _safeclaude_usage() {
@@ -263,6 +294,7 @@ Without args, operates on the current directory:
 Commands:
   build [docker-args...]    Rebuild the image (checkout only; pass-through args)
   pull                      Pull the latest published image (if using GHCR)
+  upgrade                   Update the wrapper itself (git pull, or re-run installer)
   list                      Show all safeclaude containers + volumes
   stop     [name]           Stop a container (default: current dir's)
   recreate [name]           Update image (pull if remote) + replace container, keep volume
