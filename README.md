@@ -40,12 +40,27 @@ cd ~/my-project
 safeclaude       # first run pulls the image (docker login ghcr.io first if it's private)
 ```
 
-Requires Docker. Update later with `safeclaude recreate` (pulls the newest
-image, keeps your volume). Env overrides: `SAFECLAUDE_REF` (pin a version or
-branch), `SAFECLAUDE_IMAGE`, `SAFECLAUDE_HOME`, `SAFECLAUDE_RC`.
+Requires Docker. Env overrides: `SAFECLAUDE_VERSION` (see below),
+`SAFECLAUDE_IMAGE`, `SAFECLAUDE_HOME`, `SAFECLAUDE_RC`.
 
 > Before the first release exists, install from `main`:
 > `curl -fsSL https://raw.githubusercontent.com/kurtb/safeclaude/main/install.sh | bash`
+
+### Pinning and upgrading
+
+Pick how much you want to float, then how you upgrade:
+
+| You want | How | Upgrade |
+|----------|-----|---------|
+| **Newest, always** (default) | plain install → wrapper from the latest release, image `:latest` | `safeclaude recreate` (pulls newest, keeps your volume) |
+| **A rolling minor/major** | set the image tag to `:0.2` or `:0` — e.g. `SAFECLAUDE_IMAGE=ghcr.io/kurtb/safeclaude:0.2` | `safeclaude recreate` gets patches within that line, never jumps minor/major |
+| **An exact version** | prefix the install with `SAFECLAUDE_VERSION=0.2.0` → wrapper **and** image pinned to `0.2.0` | re-run the installer with a newer `SAFECLAUDE_VERSION` (a deliberate bump) |
+
+So a pinned install never drifts — `safeclaude recreate` on an immutable `:0.2.0`
+is a no-op — and you upgrade by re-installing at the version you choose. This is
+the usual pattern: exact pins for reproducibility, the `:X` / `:X.Y` rolling tags
+(which the [release process](#published-image-ghcr) publishes) when you want
+patches but not surprises, and `:latest` to always ride the newest.
 
 To **build the image yourself** or hack on safeclaude, clone the repo instead —
 see [Quickstart](#quickstart).
