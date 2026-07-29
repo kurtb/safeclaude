@@ -256,17 +256,26 @@ _safeclaude_recreate() {
 
 _safeclaude_upgrade() {
   # Update the safeclaude WRAPPER itself (the host script) — not a container
-  # image; use `safeclaude recreate` for that. From a checkout: git pull. From
-  # a standalone install: re-run the installer (honors $SAFECLAUDE_VERSION).
-  # Re-source your shell afterward to load the new wrapper.
-  if [[ -d "$_SAFECLAUDE_DIR/.git" ]]; then
+  # image; use `safeclaude recreate` for that. A checkout (Dockerfile present,
+  # like `build`) updates via git pull; a standalone install re-runs the
+  # installer. Re-source your shell afterward to load the new wrapper.
+  if [[ -f "$_SAFECLAUDE_DIR/Dockerfile" ]]; then
     echo "safeclaude: updating checkout at ${_SAFECLAUDE_DIR}"
     git -C "$_SAFECLAUDE_DIR" pull --ff-only || return $?
     echo "safeclaude: re-source it (or open a new shell):  source ${_SAFECLAUDE_DIR}/safeclaude.zsh"
     echo "safeclaude: rebuild the image with:  safeclaude build"
   else
     echo "safeclaude: re-running the installer (set SAFECLAUDE_VERSION to pin)"
-    curl -fsSL https://raw.githubusercontent.com/kurtb/safeclaude/main/install.sh | bash || return $?
+    # Download first, then run — piping curl into bash would hide a failed
+    # download (bash reads empty stdin and exits 0). Forward SAFECLAUDE_VERSION
+    # explicitly so an unexported value still reaches the installer.
+    local tmp; tmp="$(mktemp)"
+    if ! curl -fsSL https://raw.githubusercontent.com/kurtb/safeclaude/main/install.sh -o "$tmp"; then
+      rm -f "$tmp"; echo "safeclaude: failed to download the installer" >&2; return 1
+    fi
+    SAFECLAUDE_VERSION="${SAFECLAUDE_VERSION:-}" bash "$tmp"; local rc=$?
+    rm -f "$tmp"
+    (( rc == 0 )) || return $rc
     echo "safeclaude: re-source your shell (or open a new shell) to load the new wrapper"
   fi
 }

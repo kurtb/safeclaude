@@ -26,17 +26,21 @@ if [ -z "$sel" ]; then
              | sed -n 's#.*/releases/tag/##p' || true)"
     [ -n "$sel" ] || sel="main"
 fi
-case "$sel" in
-    *[!0-9.v]*) ref="$sel";      tag="latest"   ;;  # a branch (e.g. main)
-    *)          ref="v${sel#v}"; tag="${sel#v}" ;;  # a pinned release
-esac
+if [[ "$sel" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    ref="v${sel#v}"; tag="${sel#v}"          # a pinned release (X.Y.Z)
+elif [[ "$sel" =~ ^v?[0-9]+(\.[0-9]+)?$ ]]; then
+    say "SAFECLAUDE_VERSION must be a full X.Y.Z; for a rolling line set SAFECLAUDE_IMAGE=ghcr.io/$REPO:${sel#v}"
+    exit 1
+else
+    ref="$sel"; tag="latest"                 # a branch (e.g. main)
+fi
 IMAGE="${SAFECLAUDE_IMAGE:-ghcr.io/$REPO:$tag}"
 say "installing wrapper @ $ref, image $IMAGE"
 
 # Download to a temp file; replace the wrapper only on success (a failed/404
 # download never clobbers a working install).
 mkdir -p "$DEST"
-tmp="$(mktemp)"
+tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
 curl -fsSL "https://raw.githubusercontent.com/$REPO/$ref/safeclaude.zsh" -o "$tmp"
 mv "$tmp" "$WRAPPER"
 
