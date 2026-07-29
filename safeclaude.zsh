@@ -10,11 +10,37 @@
 #   - State (auth, history, skills installed at runtime) lives in the named
 #     volume and survives image rebuilds.
 
-# Image to run. Defaults to the locally built image; override to use the
-# published one, e.g. export SAFECLAUDE_IMAGE=ghcr.io/kurtb/safeclaude:latest
-# (docker run auto-pulls it if it's not present locally).
-_SAFECLAUDE_IMAGE="${SAFECLAUDE_IMAGE:-safeclaud:latest}"
 _SAFECLAUDE_DIR="${${(%):-%x}:A:h}"
+
+# Published image, used when running without the repo (see image resolution).
+_SAFECLAUDE_GHCR="ghcr.io/kurtb/safeclaude:latest"
+
+# Image to run, resolved in priority order:
+#   1. $SAFECLAUDE_IMAGE if set (explicit override).
+#   2. Local build tag `safeclaud:latest` when sourced from a checkout (there's
+#      a Dockerfile next to this script, so `safeclaude build` makes sense).
+#   3. The published GHCR image otherwise (installed standalone, no repo) — the
+#      wrapper pulls it on `recreate`/`pull`, and docker run auto-pulls on first
+#      use.
+if [[ -n "${SAFECLAUDE_IMAGE:-}" ]]; then
+  _SAFECLAUDE_IMAGE="$SAFECLAUDE_IMAGE"
+elif [[ -f "$_SAFECLAUDE_DIR/Dockerfile" ]]; then
+  _SAFECLAUDE_IMAGE="safeclaud:latest"
+else
+  _SAFECLAUDE_IMAGE="$_SAFECLAUDE_GHCR"
+fi
+
+# Pull the image when it's a registry reference (contains a '/'); the local
+# build tag `safeclaud:latest` has no registry path and nothing to pull.
+_safeclaude_maybe_pull() {
+  case "$_SAFECLAUDE_IMAGE" in
+    */*)
+      echo "safeclaude: pulling ${_SAFECLAUDE_IMAGE}"
+      docker pull "$_SAFECLAUDE_IMAGE" \
+        || echo "safeclaude: pull failed; using local image if present" >&2
+      ;;
+  esac
+}
 
 safeclaude() {
   local subcmd="${1:-}"
@@ -38,6 +64,9 @@ safeclaude() {
     recreate)
       shift
       _safeclaude_recreate "$@"
+      ;;
+    pull|update)
+      _safeclaude_maybe_pull
       ;;
     --help|-h|help)
       _safeclaude_usage
@@ -139,6 +168,13 @@ _safeclaude_run() {
 # --- build -----------------------------------------------------------------
 
 _safeclaude_build() {
+  if [[ ! -f "$_SAFECLAUDE_DIR/Dockerfile" ]]; then
+    echo "safeclaude: no Dockerfile at ${_SAFECLAUDE_DIR} — installed standalone." >&2
+    echo "  You're running the published image (${_SAFECLAUDE_IMAGE})." >&2
+    echo "  Update it with:  safeclaude recreate   (pulls latest, keeps your volume)" >&2
+    echo "  To build locally, clone https://github.com/kurtb/safeclaude and source its safeclaude.zsh." >&2
+    return 1
+  fi
   echo "safeclaude: building ${_SAFECLAUDE_IMAGE}"
   docker build -t "$_SAFECLAUDE_IMAGE" "$@" "$_SAFECLAUDE_DIR"
 }
@@ -188,13 +224,16 @@ _safeclaude_rm() {
 # --- recreate --------------------------------------------------------------
 
 _safeclaude_recreate() {
-  # Remove the container (preserving its volume), then run again to pick up
-  # the current image. Useful after `safeclaude build` when you want image
-  # changes (firewall script, tool versions) without losing auth/history.
+  # Pull the latest image (if it's a registry reference), then remove the
+  # container (preserving its volume) and run again from that image. This is the
+  # update path for both flows: after `safeclaude build` locally, or to pick up
+  # a newly published GHCR image — without losing auth/history.
   local name_arg="${1:-}"
   local name="${name_arg:-$(_safeclaude_name_for_pwd)}"
   local container="$(_safeclaude_container "$name")"
   local volume="$(_safeclaude_volume "$name")"
+
+  _safeclaude_maybe_pull
 
   if docker ps -a --format '{{.Names}}' | grep -qx "$container"; then
     echo "safeclaude: removing container '${container}' (volume '${volume}' preserved)"
@@ -222,10 +261,11 @@ Without args, operates on the current directory:
   safeclaude --name myproj  Explicit form of the above
 
 Commands:
-  build [docker-args...]    Rebuild the image (pass-through args, e.g. --no-cache)
+  build [docker-args...]    Rebuild the image (checkout only; pass-through args)
+  pull                      Pull the latest published image (if using GHCR)
   list                      Show all safeclaude containers + volumes
   stop     [name]           Stop a container (default: current dir's)
-  recreate [name]           Replace container from current image, preserving volume
+  recreate [name]           Update image (pull if remote) + replace container, keep volume
   rm       [name]           Destroy container + volume (default: current dir's)
   help                      Show this help
 
