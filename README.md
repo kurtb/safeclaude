@@ -62,6 +62,14 @@ the usual pattern: exact pins for reproducibility, the `:X` / `:X.Y` rolling tag
 (which the [release process](#published-image-ghcr) publishes) when you want
 patches but not surprises, and `:latest` to always ride the newest.
 
+**Two things update, separately:**
+
+- the **wrapper** (this host script) — `safeclaude upgrade` (re-runs the
+  installer for a standalone install, or `git pull` for a checkout); re-source
+  your shell afterward. Set `SAFECLAUDE_VERSION` to move to a specific version.
+- the **image** — `safeclaude recreate` (pulls the newest matching tag, keeps
+  your volume).
+
 To **build the image yourself** or hack on safeclaude, clone the repo instead —
 see [Quickstart](#quickstart).
 
@@ -165,6 +173,7 @@ safeclaude                       Start/attach for the current dir
 safeclaude <name>                Same, with explicit container/volume name
 safeclaude build [args...]       Rebuild the image (checkout only; pass-through, e.g. --no-cache)
 safeclaude pull                  Pull the latest published image (if using GHCR)
+safeclaude upgrade               Update the wrapper itself (git pull, or re-run installer)
 safeclaude list                  Show all safeclaude containers + volumes
 safeclaude stop     [name]       Stop a container (default: current dir's)
 safeclaude recreate [name]       Update image (pull if remote) + replace container, keep volume
