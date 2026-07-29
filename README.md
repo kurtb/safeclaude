@@ -20,6 +20,36 @@ Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) i
 | Network | iptables/ipset default-deny firewall (allowlist applied at container start) |
 | User | `ubuntu` (uid 1000), **no general sudo** — only `init-firewall.sh`, zsh login shell |
 
+## Install
+
+Run safeclaude **without cloning** — the installer drops the host-side wrapper
+on your machine and points it at the published image
+(`ghcr.io/kurtb/safeclaude`):
+
+```zsh
+curl -fsSL https://github.com/kurtb/safeclaude/releases/latest/download/install.sh | bash
+```
+
+It writes `safeclaude.zsh` to `~/.local/share/safeclaude/` and adds a marked
+block to your `~/.zshrc` that sources it and sets
+`SAFECLAUDE_IMAGE=ghcr.io/kurtb/safeclaude:latest` (re-running just updates the
+block). Open a new shell, then:
+
+```zsh
+cd ~/my-project
+safeclaude       # first run pulls the image (docker login ghcr.io first if it's private)
+```
+
+Requires Docker. Update later with `safeclaude recreate` (pulls the newest
+image, keeps your volume). Env overrides: `SAFECLAUDE_REF` (pin a version or
+branch), `SAFECLAUDE_IMAGE`, `SAFECLAUDE_HOME`, `SAFECLAUDE_RC`.
+
+> Before the first release exists, install from `main`:
+> `curl -fsSL https://raw.githubusercontent.com/kurtb/safeclaude/main/install.sh | bash`
+
+To **build the image yourself** or hack on safeclaude, clone the repo instead —
+see [Quickstart](#quickstart).
+
 ## Model
 
 One container + one Docker volume per project directory.
@@ -31,6 +61,9 @@ One container + one Docker volume per project directory.
 - Containers run with `--init` (tini as PID 1) so orphaned agent subprocesses are reaped instead of accumulating as zombies — the entrypoint is `sleep infinity`, which never would.
 
 ## Quickstart
+
+This is the **clone + build** path — for developing safeclaude or building the
+image locally. To just *use* it, see [Install](#install).
 
 Source the helper in your `.zshrc`:
 
