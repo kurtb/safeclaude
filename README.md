@@ -174,6 +174,7 @@ safeclaude <name>                Same, with explicit container/volume name
 safeclaude build [args...]       Rebuild the image (checkout only; pass-through, e.g. --no-cache)
 safeclaude pull                  Pull the latest published image (if using GHCR)
 safeclaude upgrade               Update the wrapper itself (git pull, or re-run installer)
+safeclaude allow [domain...]     Add host-controlled firewall allowlist domains (no args: list)
 safeclaude list                  Show all safeclaude containers + volumes
 safeclaude stop     [name]       Stop a container (default: current dir's)
 safeclaude recreate [name]       Update image (pull if remote) + replace container, keep volume
@@ -217,7 +218,30 @@ dotclaude/
 - Tailscale: package mirror, coordination/login (`controlplane`/`login.tailscale.com`), and the DERP relay IPs (fetched from the published DERP map — see [Tailscale](#tailscale))
 - Localhost, your Docker host network, DNS, SSH
 
-Egress to anything else is rejected. To allowlist more domains, edit `init-firewall.sh` and rebuild.
+Egress to anything else is rejected.
+
+### Adding your own domains (no rebuild)
+
+To allowlist extra hosts at runtime, without editing `init-firewall.sh` or
+rebuilding:
+
+```zsh
+safeclaude allow api.example.com registry.example.com   # add + re-apply live
+safeclaude allow                                        # list current extras
+```
+
+`allow` appends to `~/.config/safeclaude/allowed-domains` (host, one domain per
+line, `#` comments ok) and re-applies the firewall in any running containers.
+That file is mounted **read-only** into every container at `/etc/safeclaude/`,
+which `init-firewall.sh` reads at each start.
+
+The read-only mount is deliberate and load-bearing: **only you, on the host, can
+widen the allowlist** — a `--dangerously-skip-permissions` agent inside the
+container cannot edit it to open its own egress, so the firewall stays a real
+boundary. (Existing containers created before this feature lack the mount;
+`safeclaude recreate` once to pick it up.)
+
+For a *permanent* built-in addition, edit `init-firewall.sh` and rebuild.
 
 ## Tailscale
 

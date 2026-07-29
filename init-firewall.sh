@@ -146,6 +146,22 @@ ALLOWED_DOMAINS=(
     "docker.io"
 )
 
+# User-supplied extra allowlist (non-build-time). Mounted READ-ONLY from the
+# host at /etc/safeclaude/allowed-domains (see the safeclaude wrapper), one
+# domain per line; '#' comments and blank lines ignored. Read-only + host-owned
+# is deliberate: a YOLO agent inside the container must NOT be able to widen its
+# own egress, or the firewall stops being a boundary. Only the human, on the
+# host, edits this file (via `safeclaude allow`).
+EXTRA_ALLOW_FILE="${EXTRA_ALLOW_FILE:-/etc/safeclaude/allowed-domains}"
+if [ -f "$EXTRA_ALLOW_FILE" ]; then
+    echo "Reading extra allowlist from $EXTRA_ALLOW_FILE..."
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%%#*}"                 # strip comments
+        line="${line//[[:space:]]/}"       # trim whitespace
+        [ -n "$line" ] && ALLOWED_DOMAINS+=("$line")
+    done < "$EXTRA_ALLOW_FILE"
+fi
+
 for domain in "${ALLOWED_DOMAINS[@]}"; do
     echo "Resolving $domain..."
     ips=$(dig +short A "$domain" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)

@@ -71,6 +71,10 @@ safeclaude() {
     upgrade|self-update)
       _safeclaude_upgrade
       ;;
+    allow)
+      shift
+      _safeclaude_allow "$@"
+      ;;
     --help|-h|help)
       _safeclaude_usage
       ;;
@@ -142,6 +146,12 @@ _safeclaude_run() {
     docker volume create "$volume" >/dev/null
   fi
 
+  # Host-controlled extra firewall allowlist (see `safeclaude allow`), mounted
+  # READ-ONLY so the sandboxed agent can't widen its own egress. Global across
+  # projects; init-firewall.sh reads /etc/safeclaude/allowed-domains at start.
+  local allow_dir="$HOME/.config/safeclaude"
+  mkdir -p "$allow_dir"
+
   echo "safeclaude: launching new container '${container}' (workspace=${workspace})"
   # --init runs tini as PID 1 so orphaned processes (e.g. agent subprocesses
   # left behind by docker exec sessions) get reaped instead of piling up as
@@ -152,6 +162,7 @@ _safeclaude_run() {
     --cap-add NET_ADMIN --cap-add NET_RAW \
     -v "${volume}:/home/ubuntu" \
     -v "${workspace}:${container_workspace}" \
+    -v "${allow_dir}:/etc/safeclaude:ro" \
     "$_SAFECLAUDE_IMAGE" >/dev/null || return $?
 
   # Give the entrypoint a moment to apply the firewall before we attach.
@@ -280,6 +291,49 @@ _safeclaude_upgrade() {
   fi
 }
 
+# --- allow (extra firewall domains) ----------------------------------------
+
+_safeclaude_allow() {
+  # Add domain(s) to the host-controlled extra firewall allowlist and re-apply.
+  # The file is mounted READ-ONLY into containers, so only the host (this
+  # command) can edit it — the sandboxed agent can't widen its own egress.
+  local dir="$HOME/.config/safeclaude" file
+  file="$dir/allowed-domains"
+  mkdir -p "$dir"; touch "$file"
+
+  if [[ $# -eq 0 ]]; then
+    echo "extra firewall allowlist (${file}):"
+    if [[ -s "$file" ]]; then sed 's/^/  /' "$file"; else echo "  (empty)"; fi
+    return 0
+  fi
+
+  local d
+  for d in "$@"; do
+    d="${d#http://}"; d="${d#https://}"; d="${d%%/*}"   # tolerate a pasted URL
+    if grep -qxF "$d" "$file" 2>/dev/null; then
+      echo "safeclaude: already allowed: $d"
+    else
+      print -r -- "$d" >> "$file"
+      echo "safeclaude: added: $d"
+    fi
+  done
+
+  # Re-apply live to any running safeclaude containers (they mount this file
+  # read-only; init-firewall.sh re-reads it). Containers made before this
+  # feature lack the mount — recreate them once to pick it up.
+  local applied=0 c
+  for c in ${(f)"$(docker ps --format '{{.Names}}' 2>/dev/null | grep '^safeclaude-' || true)"}; do
+    [[ -z "$c" ]] && continue
+    if docker exec "$c" sudo /usr/local/bin/init-firewall.sh >/dev/null 2>&1; then
+      echo "safeclaude: re-applied firewall in ${c}"
+      applied=1
+    else
+      echo "safeclaude: ${c} did not re-apply (recreate it to pick up the allowlist mount)" >&2
+    fi
+  done
+  (( applied )) || echo "safeclaude: saved. Applied on next container start (or 'safeclaude recreate')."
+}
+
 # --- usage -----------------------------------------------------------------
 
 _safeclaude_usage() {
@@ -295,6 +349,7 @@ Commands:
   build [docker-args...]    Rebuild the image (checkout only; pass-through args)
   pull                      Pull the latest published image (if using GHCR)
   upgrade                   Update the wrapper itself (git pull, or re-run installer)
+  allow [domain...]         Add host-controlled firewall allowlist domains (no args: list)
   list                      Show all safeclaude containers + volumes
   stop     [name]           Stop a container (default: current dir's)
   recreate [name]           Update image (pull if remote) + replace container, keep volume
