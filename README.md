@@ -174,6 +174,7 @@ safeclaude <name>                Same, with explicit container/volume name
 safeclaude build [args...]       Rebuild the image (checkout only; pass-through, e.g. --no-cache)
 safeclaude pull                  Pull the latest published image (if using GHCR)
 safeclaude upgrade               Update the wrapper itself (git pull, or re-run installer)
+safeclaude allow [domain...]     Add extra firewall domains (baked in on next build; no args: list)
 safeclaude list                  Show all safeclaude containers + volumes
 safeclaude stop     [name]       Stop a container (default: current dir's)
 safeclaude recreate [name]       Update image (pull if remote) + replace container, keep volume
@@ -221,25 +222,31 @@ Egress to anything else is rejected.
 
 ### Adding your own domains
 
-Add extra hosts to the allowlist at build time, without editing the script:
+Keep a personal allowlist that persists across rebuilds:
 
 ```zsh
-safeclaude build --build-arg SAFECLAUDE_ALLOW="api.example.com registry.example.com"
-safeclaude recreate     # roll your container onto the new image
+safeclaude allow api.example.com registry.example.com   # add (no args: list)
+safeclaude build                                        # bakes your list in
+safeclaude recreate                                     # roll onto the new image
 ```
 
-That bakes the domains into `/etc/safeclaude/allowed-domains` in the image, which
-`init-firewall.sh` reads when it applies the firewall at container start. Or edit
-the `ALLOWED_DOMAINS` array in `init-firewall.sh` directly and rebuild — same
-result.
+`allow` appends to `~/.config/safeclaude/allowed-domains` (one domain per line,
+`#` comments ok) — your source of truth. `safeclaude build` **automatically**
+reads that file and bakes it into `/etc/safeclaude/allowed-domains` in the image,
+so you never lose your list by forgetting a flag. `init-firewall.sh` reads that
+file at container start. (You can also edit the file directly, or pass
+`--build-arg SAFECLAUDE_ALLOW="…"` for a one-off.)
 
-**Why build-time and not a runtime knob?** The allowlist source has to be
+The bake is the **last** image layer, so changing the allowlist rebuilds in
+seconds, not the whole image.
+
+**Why build-time and not a live runtime knob?** The allowlist source has to be
 something a `--dangerously-skip-permissions` agent inside the container *cannot*
 change — otherwise it could widen its own egress and the firewall stops being a
-boundary. Baking it into the root-owned image guarantees that (it's not a volume
-or a mount the agent can reach), and it keeps the mechanism dead simple. The
-cost is a rebuild to change it; domain changes are rare, so that's the right
-trade.
+boundary. The host file is only ever read at **build** and baked into the
+root-owned image; the running container has no writable/mounted copy the agent
+could reach. Changing domains costs a quick rebuild + `recreate`, which is the
+right trade since domain changes are rare.
 
 For a *permanent* built-in addition, edit `init-firewall.sh` and rebuild.
 

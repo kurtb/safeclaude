@@ -157,16 +157,6 @@ RUN chmod +x /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh \
        > /etc/sudoers.d/ubuntu-firewall \
     && chmod 0440 /etc/sudoers.d/ubuntu-firewall
 
-# ── Extra egress allowlist (baked in) ─────────────────────────────────
-# Add your own domains to the firewall allowlist without editing the script:
-#   safeclaude build --build-arg SAFECLAUDE_ALLOW="api.example.com registry.example.com"
-# init-firewall.sh reads /etc/safeclaude/allowed-domains at container start.
-# It's root-owned and baked into the image (not a volume or mount), so a
-# YOLO-mode agent running as ubuntu cannot edit it to widen its own egress.
-ARG SAFECLAUDE_ALLOW=""
-RUN mkdir -p /etc/safeclaude \
-    && printf '%s\n' ${SAFECLAUDE_ALLOW} > /etc/safeclaude/allowed-domains
-
 # ── Configure existing ubuntu user ────────────────────────────────────
 # IMPORTANT: ubuntu has NO general sudo. The only privileged operation it can
 # perform is /usr/local/bin/init-firewall.sh (see sudoers entry above). This
@@ -274,6 +264,23 @@ RUN mkdir -p ${HOME}/.claude \
 
 # Workspace mount point (host source code goes here).
 RUN mkdir -p ${HOME}/workspace
+
+# ── Extra egress allowlist (baked in) ─────────────────────────────────
+# Your own domains, added to the firewall allowlist. `safeclaude build` passes
+# these automatically from ~/.config/safeclaude/allowed-domains on the host, or:
+#   safeclaude build --build-arg SAFECLAUDE_ALLOW="api.example.com registry.example.com"
+# init-firewall.sh reads /etc/safeclaude/allowed-domains at container start. It's
+# root-owned and baked into the image (not a volume or mount), so a YOLO-mode
+# agent running as ubuntu cannot edit it to widen its own egress.
+#
+# Kept as the LAST layer on purpose: changing the allowlist only rebuilds this
+# tiny step, not the node/agents/gstack layers above.
+USER root
+ARG SAFECLAUDE_ALLOW=""
+RUN mkdir -p /etc/safeclaude \
+    && printf '%s\n' ${SAFECLAUDE_ALLOW} > /etc/safeclaude/allowed-domains
+USER ubuntu
+
 WORKDIR /home/ubuntu/workspace
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

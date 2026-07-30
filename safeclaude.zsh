@@ -71,6 +71,10 @@ safeclaude() {
     upgrade|self-update)
       _safeclaude_upgrade
       ;;
+    allow)
+      shift
+      _safeclaude_allow "$@"
+      ;;
     --help|-h|help)
       _safeclaude_usage
       ;;
@@ -178,8 +182,17 @@ _safeclaude_build() {
     echo "  To build locally, clone https://github.com/kurtb/safeclaude and source its safeclaude.zsh." >&2
     return 1
   fi
+  # Persist your extra firewall domains: bake in whatever's in the host
+  # allowlist file so you never lose it by forgetting the build-arg. An explicit
+  # --build-arg SAFECLAUDE_ALLOW=... in "$@" still wins (docker uses the last).
+  local -a allow_arg
+  local allow
+  allow="$(_safeclaude_allow_list | tr '\n' ' ')"
+  [[ -n "${allow// /}" ]] && allow_arg=(--build-arg "SAFECLAUDE_ALLOW=${allow% }")
+
   echo "safeclaude: building ${_SAFECLAUDE_IMAGE}"
-  docker build -t "$_SAFECLAUDE_IMAGE" "$@" "$_SAFECLAUDE_DIR"
+  [[ -n "$allow" ]] && echo "safeclaude: baking extra allowlist: ${allow% }"
+  docker build "${allow_arg[@]}" -t "$_SAFECLAUDE_IMAGE" "$@" "$_SAFECLAUDE_DIR"
 }
 
 # --- list ------------------------------------------------------------------
@@ -280,6 +293,46 @@ _safeclaude_upgrade() {
   fi
 }
 
+# --- allow (extra firewall domains, baked in at build) ---------------------
+
+_SAFECLAUDE_ALLOW_FILE="$HOME/.config/safeclaude/allowed-domains"
+
+# Emit the effective allowlist (non-comment, non-blank lines), one per line.
+_safeclaude_allow_list() {
+  [[ -f "$_SAFECLAUDE_ALLOW_FILE" ]] || return 0
+  grep -vE '^[[:space:]]*(#|$)' "$_SAFECLAUDE_ALLOW_FILE" 2>/dev/null
+}
+
+_safeclaude_allow() {
+  # Add domain(s) to your persistent extra allowlist (~/.config/safeclaude/
+  # allowed-domains). `safeclaude build` bakes this into the image, so a
+  # rebuild + recreate applies it. It's build-time on purpose: the agent must
+  # not be able to widen its own egress, so the source can't be runtime-writable.
+  mkdir -p "${_SAFECLAUDE_ALLOW_FILE:h}"; touch "$_SAFECLAUDE_ALLOW_FILE"
+
+  if [[ $# -eq 0 ]]; then
+    echo "extra firewall allowlist (${_SAFECLAUDE_ALLOW_FILE}):"
+    local cur; cur="$(_safeclaude_allow_list)"
+    if [[ -n "$cur" ]]; then print -r -- "$cur" | sed 's/^/  /'; else echo "  (empty)"; fi
+    return 0
+  fi
+
+  local d
+  for d in "$@"; do
+    d="${d#http://}"; d="${d#https://}"; d="${d%%/*}"; d="${d%%:*}"   # host only
+    if [[ -z "$d" || "$d" != *.* ]]; then
+      echo "safeclaude: skipping invalid domain: '${d}'" >&2; continue
+    fi
+    if _safeclaude_allow_list | grep -qxF "$d"; then
+      echo "safeclaude: already allowed: $d"
+    else
+      print -r -- "$d" >> "$_SAFECLAUDE_ALLOW_FILE"
+      echo "safeclaude: added: $d"
+    fi
+  done
+  echo "safeclaude: apply with:  safeclaude build && safeclaude recreate"
+}
+
 # --- usage -----------------------------------------------------------------
 
 _safeclaude_usage() {
@@ -295,6 +348,7 @@ Commands:
   build [docker-args...]    Rebuild the image (checkout only; pass-through args)
   pull                      Pull the latest published image (if using GHCR)
   upgrade                   Update the wrapper itself (git pull, or re-run installer)
+  allow [domain...]         Add extra firewall domains (baked in on next build; no args: list)
   list                      Show all safeclaude containers + volumes
   stop     [name]           Stop a container (default: current dir's)
   recreate [name]           Update image (pull if remote) + replace container, keep volume
