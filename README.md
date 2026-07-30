@@ -174,7 +174,6 @@ safeclaude <name>                Same, with explicit container/volume name
 safeclaude build [args...]       Rebuild the image (checkout only; pass-through, e.g. --no-cache)
 safeclaude pull                  Pull the latest published image (if using GHCR)
 safeclaude upgrade               Update the wrapper itself (git pull, or re-run installer)
-safeclaude allow [domain...]     Add host-controlled firewall allowlist domains (no args: list)
 safeclaude list                  Show all safeclaude containers + volumes
 safeclaude stop     [name]       Stop a container (default: current dir's)
 safeclaude recreate [name]       Update image (pull if remote) + replace container, keep volume
@@ -220,38 +219,27 @@ dotclaude/
 
 Egress to anything else is rejected.
 
-### Adding your own domains (no rebuild)
+### Adding your own domains
 
-To allowlist extra hosts at runtime, without editing `init-firewall.sh` or
-rebuilding:
-
-```zsh
-safeclaude allow api.example.com registry.example.com   # add
-safeclaude allow                                        # list current extras
-```
-
-`allow` appends to `~/.config/safeclaude/allowed-domains` (host, one domain per
-line, `#` comments ok). That file is mounted **read-only** into every container
-at `/etc/safeclaude/`, which `init-firewall.sh` reads when it applies the
-firewall **at container start**. Apply a change by restarting the container:
+Add extra hosts to the allowlist at build time, without editing the script:
 
 ```zsh
-docker restart safeclaude-<name>     # or: safeclaude recreate
+safeclaude build --build-arg SAFECLAUDE_ALLOW="api.example.com registry.example.com"
+safeclaude recreate     # roll your container onto the new image
 ```
 
-Two deliberate design points, both security-driven:
+That bakes the domains into `/etc/safeclaude/allowed-domains` in the image, which
+`init-firewall.sh` reads when it applies the firewall at container start. Or edit
+the `ALLOWED_DOMAINS` array in `init-firewall.sh` directly and rebuild — same
+result.
 
-- **Read-only, host-owned.** Only you, on the host, can widen the allowlist — a
-  `--dangerously-skip-permissions` agent inside the container cannot edit it to
-  open its own egress, so the firewall stays a real boundary. (Existing
-  containers created before this feature lack the mount; `safeclaude recreate`
-  once to pick it up.)
-- **Applied at boot, not live.** The firewall is (re)built only at a clean
-  container start — before the agent is running. It is never re-run in a live
-  container, because a re-run can't reach GitHub through the already-locked-down
-  policy (it would break egress), and the only workaround — briefly reopening
-  the policy — would give the agent an egress window. So changes take effect on
-  restart.
+**Why build-time and not a runtime knob?** The allowlist source has to be
+something a `--dangerously-skip-permissions` agent inside the container *cannot*
+change — otherwise it could widen its own egress and the firewall stops being a
+boundary. Baking it into the root-owned image guarantees that (it's not a volume
+or a mount the agent can reach), and it keeps the mechanism dead simple. The
+cost is a rebuild to change it; domain changes are rare, so that's the right
+trade.
 
 For a *permanent* built-in addition, edit `init-firewall.sh` and rebuild.
 
