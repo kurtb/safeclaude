@@ -318,20 +318,20 @@ _safeclaude_allow() {
     fi
   done
 
-  # Re-apply live to any running safeclaude containers (they mount this file
-  # read-only; init-firewall.sh re-reads it). Containers made before this
-  # feature lack the mount — recreate them once to pick it up.
-  local applied=0 c
-  for c in ${(f)"$(docker ps --format '{{.Names}}' 2>/dev/null | grep '^safeclaude-' || true)"}; do
-    [[ -z "$c" ]] && continue
-    if docker exec "$c" sudo /usr/local/bin/init-firewall.sh >/dev/null 2>&1; then
-      echo "safeclaude: re-applied firewall in ${c}"
-      applied=1
-    else
-      echo "safeclaude: ${c} did not re-apply (recreate it to pick up the allowlist mount)" >&2
-    fi
-  done
-  (( applied )) || echo "safeclaude: saved. Applied on next container start (or 'safeclaude recreate')."
+  # Apply by (re)starting the container so the firewall re-initialises at a
+  # clean boot. We deliberately do NOT re-run init-firewall.sh in a live
+  # container: it's a boot-only script (a re-run can't reach GitHub through the
+  # already-DROP policy and would leave the firewall broken), and any "reset the
+  # policy to fetch" workaround would open an egress window the sandboxed agent
+  # could exploit. A restart re-applies it before the agent is running.
+  local running
+  running=(${(f)"$(docker ps --format '{{.Names}}' 2>/dev/null | grep '^safeclaude-' || true)"})
+  if (( ${#running} )); then
+    echo "safeclaude: apply to running containers with:  docker restart ${running}"
+    echo "safeclaude: (or 'safeclaude recreate' — needed once for containers predating the allowlist mount)"
+  else
+    echo "safeclaude: saved. Applied on next container start (or 'safeclaude recreate')."
+  fi
 }
 
 # --- usage -----------------------------------------------------------------

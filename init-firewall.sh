@@ -152,7 +152,11 @@ ALLOWED_DOMAINS=(
 # is deliberate: a YOLO agent inside the container must NOT be able to widen its
 # own egress, or the firewall stops being a boundary. Only the human, on the
 # host, edits this file (via `safeclaude allow`).
-EXTRA_ALLOW_FILE="${EXTRA_ALLOW_FILE:-/etc/safeclaude/allowed-domains}"
+#
+# The path is HARD-CODED on purpose — no env override — so the agent can't point
+# it at a file it controls (e.g. via `SOMEVAR=… sudo init-firewall.sh`) even if
+# the sudoers env policy is ever loosened.
+EXTRA_ALLOW_FILE="/etc/safeclaude/allowed-domains"
 if [ -f "$EXTRA_ALLOW_FILE" ]; then
     echo "Reading extra allowlist from $EXTRA_ALLOW_FILE..."
     while IFS= read -r line || [ -n "$line" ]; do
