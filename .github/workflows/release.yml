@@ -40,6 +40,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Compute next version
         id: ver
@@ -69,27 +70,60 @@ jobs:
           echo "next=$next" >> "$GITHUB_OUTPUT"
           echo "Next version: $next"
 
-      - name: Create tag + GitHub Release
+      # Create the tag first so publish.yml can build the versioned image from
+      # it. Pushing with GITHUB_TOKEN does NOT trigger publish's on:push (GitHub
+      # anti-recursion) — we dispatch it explicitly next.
+      - name: Create tag
+        id: tag
         env:
           GH_TOKEN: ${{ github.token }}
           NEXT: ${{ steps.ver.outputs.next }}
         run: |
           set -euo pipefail
-          if gh release view "$NEXT" >/dev/null 2>&1; then
-            echo "Release $NEXT already exists" >&2
-            exit 1
+          if gh release view "$NEXT" >/dev/null 2>&1 || git rev-parse -q --verify "refs/tags/$NEXT" >/dev/null; then
+            echo "release/tag $NEXT already exists" >&2; exit 1
           fi
-          gh release create "$NEXT" \
-            --target "$GITHUB_SHA" \
-            --title "$NEXT" \
-            --generate-notes \
-            install.sh safeclaude.zsh
+          git tag "$NEXT" "$GITHUB_SHA"
+          git push origin "$NEXT"
 
-      - name: Trigger image publish for the tag
+      - name: Build & publish the image, then wait for it
         env:
           GH_TOKEN: ${{ github.token }}
           NEXT: ${{ steps.ver.outputs.next }}
         run: |
           set -euo pipefail
           gh workflow run publish.yml --ref "$NEXT"
-          echo "Dispatched publish.yml on $NEXT — watch the Actions tab for the image build."
+          # Find the run we just dispatched (it takes a few seconds to register).
+          # A previous release's dispatch is already 'completed', so pick the
+          # newest not-completed one — with concurrency:release, that's ours.
+          run_id=""
+          for _ in $(seq 1 24); do
+            sleep 5
+            run_id="$(gh run list --workflow=publish.yml --event=workflow_dispatch --limit 5 \
+                        --json databaseId,status \
+                        --jq '[.[] | select(.status!="completed")][0].databaseId // empty')"
+            [ -n "$run_id" ] && break
+          done
+          [ -n "$run_id" ] || { echo "could not find the dispatched publish run" >&2; exit 1; }
+          echo "waiting for publish run $run_id to finish..."
+          gh run watch "$run_id" --exit-status
+
+      # Only now that the image is confirmed pushed do we cut the Release, so a
+      # tag/Release never exists without its image.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT: ${{ steps.ver.outputs.next }}
+        run: |
+          set -euo pipefail
+          gh release create "$NEXT" \
+            --verify-tag \
+            --title "$NEXT" \
+            --generate-notes \
+            install.sh safeclaude.zsh
+
+      - name: Roll back the tag if publish failed
+        if: failure() && steps.tag.outcome == 'success'
+        env:
+          NEXT: ${{ steps.ver.outputs.next }}
+        run: git push --delete origin "$NEXT" || true

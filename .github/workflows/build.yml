@@ -49,6 +49,8 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           push: false
+          # Read-only cache: PR builds reuse main's warm layers but never write
+          # the shared cache, so an untrusted PR can't poison it. (Publishing
+          # from main populates the cache.)
           cache-from: type=gha,scope=${{ steps.prep.outputs.slug }}
-          cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.slug }}
           provenance: false
