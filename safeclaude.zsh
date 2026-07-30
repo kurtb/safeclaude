@@ -303,12 +303,30 @@ _safeclaude_allow_list() {
   grep -vE '^[[:space:]]*(#|$)' "$_SAFECLAUDE_ALLOW_FILE" 2>/dev/null
 }
 
+# Create the settings file with a self-documenting header if it doesn't exist.
+_safeclaude_allow_ensure() {
+  [[ -f "$_SAFECLAUDE_ALLOW_FILE" ]] && return 0
+  mkdir -p "${_SAFECLAUDE_ALLOW_FILE:h}"
+  cat > "$_SAFECLAUDE_ALLOW_FILE" <<'EOF'
+# safeclaude extra firewall allowlist — GLOBAL (applies to every safeclaude
+# container). One domain per line; '#' comments and blank lines are ignored.
+#
+# `safeclaude allow <domain>` appends here; `safeclaude build` bakes this list
+# into the image and `safeclaude recreate` applies it. It's baked into the
+# root-owned image (not mounted), so a sandboxed agent can't edit it to widen
+# its own egress.
+#
+# Global by design: if you trust a domain enough to allow it for one sandbox,
+# you trust it for all of them.
+EOF
+}
+
 _safeclaude_allow() {
   # Add domain(s) to your persistent extra allowlist (~/.config/safeclaude/
   # allowed-domains). `safeclaude build` bakes this into the image, so a
   # rebuild + recreate applies it. It's build-time on purpose: the agent must
   # not be able to widen its own egress, so the source can't be runtime-writable.
-  mkdir -p "${_SAFECLAUDE_ALLOW_FILE:h}"; touch "$_SAFECLAUDE_ALLOW_FILE"
+  _safeclaude_allow_ensure
 
   if [[ $# -eq 0 ]]; then
     echo "extra firewall allowlist (${_SAFECLAUDE_ALLOW_FILE}):"

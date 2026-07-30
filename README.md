@@ -231,14 +231,23 @@ safeclaude recreate                                     # roll onto the new imag
 ```
 
 `allow` appends to `~/.config/safeclaude/allowed-domains` (one domain per line,
-`#` comments ok) — your source of truth. `safeclaude build` **automatically**
-reads that file and bakes it into `/etc/safeclaude/allowed-domains` in the image,
-so you never lose your list by forgetting a flag. `init-firewall.sh` reads that
-file at container start. (You can also edit the file directly, or pass
-`--build-arg SAFECLAUDE_ALLOW="…"` for a one-off.)
+`#` comments ok; the file is created with a documented header) — your source of
+truth. `safeclaude build` **automatically** reads that file and bakes it into
+`/etc/safeclaude/allowed-domains` in the image, so you never lose your list by
+forgetting a flag. `init-firewall.sh` reads that file at container start. (You
+can also edit the file directly, or pass `--build-arg SAFECLAUDE_ALLOW="…"` for a
+one-off.)
 
 The bake is the **last** image layer, so changing the allowlist rebuilds in
 seconds, not the whole image.
+
+**The list is global** — one file, applied to every safeclaude container. That's
+deliberate: if you trust a domain enough to allow it for one sandbox, you trust
+it for all of them, and a single list is far simpler than per-project ones.
+
+**No extra domains?** Nothing special happens. With an empty or absent list,
+`safeclaude build` bakes an empty file and the firewall just uses its built-in
+allowlist — there's no mount and no missing-file edge case to worry about.
 
 **Why build-time and not a live runtime knob?** The allowlist source has to be
 something a `--dangerously-skip-permissions` agent inside the container *cannot*
