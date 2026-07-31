@@ -39,14 +39,17 @@ iptables -A OUTPUT -o lo -j ACCEPT
 
 ipset create allowed-domains hash:net
 
-# GitHub's published IP ranges (web, api, git).
+# GitHub's published IP ranges (web, api, git, pages). `.pages` covers GitHub
+# Pages (*.github.io and Pages custom domains) — needed for e.g. project docs
+# hosted there. Note: Pages sites share one IP pool and the firewall matches by
+# IP, so allowlisting Pages is inherently all-or-nothing across *.github.io.
 echo "Fetching GitHub IP ranges..."
 gh_ranges=$(curl -s https://api.github.com/meta)
 if [ -z "$gh_ranges" ]; then
     echo "ERROR: Failed to fetch GitHub IP ranges"
     exit 1
 fi
-if ! echo "$gh_ranges" | jq -e '.web and .api and .git' >/dev/null; then
+if ! echo "$gh_ranges" | jq -e '.web and .api and .git and .pages' >/dev/null; then
     echo "ERROR: GitHub API response missing required fields"
     exit 1
 fi
@@ -56,7 +59,7 @@ while read -r cidr; do
         exit 1
     fi
     ipset add allowed-domains "$cidr"
-done < <(echo "$gh_ranges" | jq -r '(.web + .api + .git)[]' | aggregate -q)
+done < <(echo "$gh_ranges" | jq -r '(.web + .api + .git + .pages)[]' | aggregate -q)
 
 # Tailscale DERP relay servers (best-effort). In this locked-down egress
 # environment, direct peer connections (UDP to arbitrary peer IPs) are blocked,
