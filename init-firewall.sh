@@ -103,6 +103,12 @@ ALLOWED_DOMAINS=(
     "api2.cursor.sh"
     "download.cursor.sh"
 
+    # Langfuse (LLM observability — docs + both cloud regions; self-hosters add
+    # their own host)
+    "langfuse.com"
+    "cloud.langfuse.com"
+    "us.cloud.langfuse.com"
+
     # Package registries
     "registry.npmjs.org"
     "pypi.org"
