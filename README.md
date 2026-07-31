@@ -1,6 +1,6 @@
 # safeclaude
 
-Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) in YOLO mode — `--dangerously-skip-permissions` is fine here because the container has no path to your host filesystem outside the project you mounted, and a default-deny firewall restricts outbound network to an allowlist (Anthropic, OpenAI, Google AI, GitHub, npm, PyPI, gcloud, Pulumi, Kubernetes/Helm, container registries, Tailscale).
+Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) in YOLO mode — `--dangerously-skip-permissions` is fine here because the container has no path to your host filesystem outside the project you mounted, and a default-deny firewall restricts outbound network to an allowlist (Anthropic, OpenAI, Google AI, Langfuse, GitHub, npm, PyPI, gcloud, Pulumi, Kubernetes/Helm, container registries, Tailscale).
 
 ## What's included
 
@@ -211,6 +211,7 @@ dotclaude/
 
 - GitHub's published IP ranges (from `api.github.com/meta`)
 - Anthropic, OpenAI, Google AI / gcloud endpoints
+- Langfuse (LLM observability — `langfuse.com`, `cloud.langfuse.com`, `us.cloud.langfuse.com`)
 - npm, PyPI, Bun, Ubuntu apt mirrors
 - Pulumi, GitHub auxiliary CDNs (objects, raw, codeload), GitHub Pages
 - Kubernetes (`dl.k8s.io`, `registry.k8s.io`) and Helm (`get.helm.sh`)
