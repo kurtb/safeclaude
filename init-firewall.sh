@@ -146,6 +146,22 @@ ALLOWED_DOMAINS=(
     "docker.io"
 )
 
+# Extra allowlist baked into the image at build time (see the SAFECLAUDE_ALLOW
+# build-arg in the Dockerfile), one domain per line; '#' comments and blank
+# lines ignored. The file is root-owned and part of the image — not a volume or
+# mount — so a YOLO agent running as ubuntu can't edit it to widen its own
+# egress. The path is HARD-CODED (no env override) so the agent also can't
+# redirect it via `SOMEVAR=… sudo init-firewall.sh`.
+EXTRA_ALLOW_FILE="/etc/safeclaude/allowed-domains"
+if [ -f "$EXTRA_ALLOW_FILE" ]; then
+    echo "Reading extra allowlist from $EXTRA_ALLOW_FILE..."
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%%#*}"                 # strip comments
+        line="${line//[[:space:]]/}"       # remove all whitespace
+        [ -n "$line" ] && ALLOWED_DOMAINS+=("$line")
+    done < "$EXTRA_ALLOW_FILE"
+fi
+
 for domain in "${ALLOWED_DOMAINS[@]}"; do
     echo "Resolving $domain..."
     ips=$(dig +short A "$domain" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
