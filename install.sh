@@ -50,15 +50,17 @@ else
     ref="$sel"; tag="latest"                 # a branch (e.g. main)
 fi
 
-# Image: a genuine custom SAFECLAUDE_IMAGE (not our own ghcr repo) wins;
-# otherwise ghcr.io/$REPO:$tag. A SAFECLAUDE_IMAGE that points at our ghcr repo
-# is IGNORED — it was written into the rc by a prior install, and honoring it
-# would freeze the image at an old version on upgrade (the bug this fixes).
-# The image is re-resolved each run, so `safeclaude upgrade` moves it forward.
-if [ "$pinned" = 0 ] && [ -n "${SAFECLAUDE_IMAGE:-}" ] && [[ "$SAFECLAUDE_IMAGE" != ghcr.io/"$REPO":* ]]; then
-    IMAGE="$SAFECLAUDE_IMAGE"
-else
-    IMAGE="ghcr.io/$REPO:$tag"
+# Image: a genuine custom SAFECLAUDE_IMAGE (any ref that isn't our own ghcr
+# repo) always wins. A value that points at ghcr.io/$REPO — in ANY form (`:tag`,
+# `@digest`, or bare) — is IGNORED as a stale prior-install value; that leak was
+# the freeze bug. The image is re-resolved each run, so `safeclaude upgrade`
+# moves it forward. Pin a version with SAFECLAUDE_VERSION.
+IMAGE="ghcr.io/$REPO:$tag"
+if [ -n "${SAFECLAUDE_IMAGE:-}" ]; then
+    case "$SAFECLAUDE_IMAGE" in
+        ghcr.io/"$REPO" | ghcr.io/"$REPO":* | ghcr.io/"$REPO"@*) : ;;  # ours → ignore
+        *) IMAGE="$SAFECLAUDE_IMAGE" ;;                                 # genuine custom
+    esac
 fi
 say "installing wrapper @ $ref, image $IMAGE"
 

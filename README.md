@@ -54,7 +54,7 @@ moving `:latest`, which follows `main`):
 | You want | Install | Upgrade |
 |----------|---------|---------|
 | **Latest release** (default) | plain install → wrapper + image at the newest release | `safeclaude upgrade` re-resolves the newest release and repins both, then `safeclaude recreate` |
-| **A specific version** | prefix with `SAFECLAUDE_VERSION=0.2.0` → wrapper + image pinned to `0.2.0` | stays put; re-run with a new `SAFECLAUDE_VERSION` to move it (a bare `upgrade` jumps to the newest release) |
+| **A specific version** | prefix with `SAFECLAUDE_VERSION=0.2.0` → wrapper + image pinned to `0.2.0` | re-run with a new `SAFECLAUDE_VERSION` to change the pin. A bare `safeclaude upgrade` re-resolves to the newest release (i.e. un-pins), so to hold a version, don't bare-upgrade. |
 
 Full upgrade flow for a standalone install:
 
