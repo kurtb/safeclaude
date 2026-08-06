@@ -146,6 +146,9 @@ ALLOWED_DOMAINS=(
     "registry.k8s.io"
     "get.helm.sh"
 
+    # Istio (release binaries + Helm charts, hosted on GCS)
+    "istio-release.storage.googleapis.com"
+
     # Container registries
     "ghcr.io"
     "quay.io"

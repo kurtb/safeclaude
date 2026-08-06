@@ -214,7 +214,7 @@ dotclaude/
 - Langfuse (LLM observability — `langfuse.com`, `cloud.langfuse.com`, `us.cloud.langfuse.com`)
 - npm, PyPI, Bun, Ubuntu apt mirrors
 - Pulumi, GitHub auxiliary CDNs (objects, raw, codeload), GitHub Pages
-- Kubernetes (`dl.k8s.io`, `registry.k8s.io`) and Helm (`get.helm.sh`)
+- Kubernetes (`dl.k8s.io`, `registry.k8s.io`), Helm (`get.helm.sh`), Istio (`istio-release.storage.googleapis.com`)
 - Container registries (`ghcr.io`, `quay.io`, `docker.io`)
 - Tailscale: package mirror, coordination/login (`controlplane`/`login.tailscale.com`), and the DERP relay IPs (fetched from the published DERP map — see [Tailscale](#tailscale))
 - Localhost, your Docker host network, DNS, SSH
