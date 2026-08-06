@@ -31,9 +31,9 @@ curl -fsSL https://github.com/kurtb/safeclaude/releases/latest/download/install.
 ```
 
 It writes `safeclaude.zsh` to `~/.local/share/safeclaude/` and adds a marked
-block to your `~/.zshrc` that sources it and sets
-`SAFECLAUDE_IMAGE=ghcr.io/kurtb/safeclaude:latest` (re-running just updates the
-block). Open a new shell, then:
+block to your `~/.zshrc` that sources it and pins `SAFECLAUDE_IMAGE` to the
+release you installed (e.g. `…:0.3.0`); re-running re-resolves the newest
+release. Open a new shell, then:
 
 ```zsh
 cd ~/my-project
@@ -48,27 +48,25 @@ Requires Docker. Env overrides: `SAFECLAUDE_VERSION` (see below),
 
 ### Pinning and upgrading
 
-Pick how much you want to float, then how you upgrade:
+The wrapper and the image move **together**, both pinned to a release (not the
+moving `:latest`, which follows `main`):
 
-| You want | How | Upgrade |
-|----------|-----|---------|
-| **Newest, always** (default) | plain install → wrapper from the latest release, image `:latest` | `safeclaude recreate` (pulls newest, keeps your volume) |
-| **A rolling minor/major** | set the image tag to `:0.2` or `:0` — e.g. `SAFECLAUDE_IMAGE=ghcr.io/kurtb/safeclaude:0.2` | `safeclaude recreate` gets patches within that line, never jumps minor/major |
-| **An exact version** | prefix the install with `SAFECLAUDE_VERSION=0.2.0` → wrapper **and** image pinned to `0.2.0` | re-run the installer with a newer `SAFECLAUDE_VERSION` (a deliberate bump) |
+| You want | Install | Upgrade |
+|----------|---------|---------|
+| **Latest release** (default) | plain install → wrapper + image at the newest release | `safeclaude upgrade` re-resolves the newest release and repins both, then `safeclaude recreate` |
+| **A specific version** | prefix with `SAFECLAUDE_VERSION=0.2.0` → wrapper + image pinned to `0.2.0` | re-run with a new `SAFECLAUDE_VERSION` to change the pin. A bare `safeclaude upgrade` re-resolves to the newest release (i.e. un-pins), so to hold a version, don't bare-upgrade. |
 
-So a pinned install never drifts — `safeclaude recreate` on an immutable `:0.2.0`
-is a no-op — and you upgrade by re-installing at the version you choose. This is
-the usual pattern: exact pins for reproducibility, the `:X` / `:X.Y` rolling tags
-(which the [release process](#published-image-ghcr) publishes) when you want
-patches but not surprises, and `:latest` to always ride the newest.
+Full upgrade flow for a standalone install:
 
-**Two things update, separately:**
+```zsh
+safeclaude upgrade      # re-fetch the wrapper + repin the image to the newest release
+exec zsh                # (or open a new shell) to load the updated wrapper + pin
+safeclaude recreate     # pull the new image, keep your volume
+```
 
-- the **wrapper** (this host script) — `safeclaude upgrade` (re-runs the
-  installer for a standalone install, or `git pull` for a checkout); re-source
-  your shell afterward. Set `SAFECLAUDE_VERSION` to move to a specific version.
-- the **image** — `safeclaude recreate` (pulls the newest matching tag, keeps
-  your volume).
+`SAFECLAUDE_IMAGE` is for a **custom (non-ghcr) image** only. A value pointing at
+`ghcr.io/kurtb/safeclaude` is ignored as a stale prior-install value, so the
+image never freezes at an old version on upgrade.
 
 To **build the image yourself** or hack on safeclaude, clone the repo instead —
 see [Quickstart](#quickstart).
