@@ -94,14 +94,17 @@ jobs:
           set -euo pipefail
           gh workflow run publish.yml --ref "$NEXT"
           # Find the run we just dispatched (it takes a few seconds to register).
-          # A previous release's dispatch is already 'completed', so pick the
-          # newest not-completed one — with concurrency:release, that's ours.
+          # Match by our tag ref (headBranch == $NEXT) so a concurrent publish
+          # dispatch on a different ref can't be picked up; fall back to the
+          # newest in-progress dispatch only if no ref match is found yet.
           run_id=""
           for _ in $(seq 1 24); do
             sleep 5
-            run_id="$(gh run list --workflow=publish.yml --event=workflow_dispatch --limit 5 \
-                        --json databaseId,status \
-                        --jq '[.[] | select(.status!="completed")][0].databaseId // empty')"
+            runs="$(gh run list --workflow=publish.yml --event=workflow_dispatch --limit 20 \
+                      --json databaseId,status,headBranch)"
+            run_id="$(printf '%s' "$runs" | jq -r --arg tag "$NEXT" \
+              '[.[] | select(.status!="completed")] as $live
+               | (([$live[] | select(.headBranch==$tag)] + $live)[0]).databaseId // empty')"
             [ -n "$run_id" ] && break
           done
           [ -n "$run_id" ] || { echo "could not find the dispatched publish run" >&2; exit 1; }
