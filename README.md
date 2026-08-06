@@ -209,7 +209,7 @@ dotclaude/
 
 `init-firewall.sh` (adapted from [anthropics/claude-code/.devcontainer](https://github.com/anthropics/claude-code/tree/main/.devcontainer)) sets iptables `OUTPUT` policy to `DROP`, then allows:
 
-- GitHub's published IP ranges (from `api.github.com/meta`)
+- GitHub's published IP ranges (`web`, `api`, `git`, `pages` from `api.github.com/meta` — `pages` makes any `*.github.io` reachable)
 - Anthropic, OpenAI, Google AI / gcloud endpoints
 - Langfuse (LLM observability — `langfuse.com`, `cloud.langfuse.com`, `us.cloud.langfuse.com`)
 - npm, PyPI, Bun, Ubuntu apt mirrors
