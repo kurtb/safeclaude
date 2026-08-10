@@ -186,6 +186,23 @@ for domain in "${ALLOWED_DOMAINS[@]}"; do
     done < <(echo "$ips")
 done
 
+# CDN-fronted hosts whose IP rotates faster than this resolve-at-start snapshot
+# can track: allowlist the /24 of whatever they currently resolve to, so the
+# rotation within that edge subnet is covered (a single-IP entry goes stale and
+# the host starts getting blocked mid-session). get.helm.sh is behind Azure
+# Front Door (…azurefd.net); its anycast IP was observed rotating within a /24
+# (150.171.110.145 / .147).
+CIDR_HOSTS=(
+    "get.helm.sh"
+)
+for host in "${CIDR_HOSTS[@]}"; do
+    ip=$(dig +short A "$host" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+    if [ -n "$ip" ]; then
+        echo "Allowlisting ${host} edge subnet ${ip%.*}.0/24"
+        ipset add allowed-domains "${ip%.*}.0/24" 2>/dev/null || true
+    fi
+done
+
 # Allow host network so docker-internal traffic still works.
 HOST_IP=$(ip route | grep default | awk '{print $3}' | head -n1)
 if [ -n "$HOST_IP" ]; then
