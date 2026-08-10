@@ -196,11 +196,18 @@ CIDR_HOSTS=(
     "get.helm.sh"
 )
 for host in "${CIDR_HOSTS[@]}"; do
-    ip=$(dig +short A "$host" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
-    if [ -n "$ip" ]; then
+    ips=$(dig +short A "$host" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+    if [ -z "$ips" ]; then
+        echo "WARNING: Failed to resolve $host for /24 widening (skipping)"
+        continue
+    fi
+    # Widen EVERY resolved A record to its /24 (a CDN/AFD host can return
+    # several IPs across different subnets; covering only the first would still
+    # leave the client blocked when it picks another). Duplicate /24s are no-ops.
+    while read -r ip; do
         echo "Allowlisting ${host} edge subnet ${ip%.*}.0/24"
         ipset add allowed-domains "${ip%.*}.0/24" 2>/dev/null || true
-    fi
+    done < <(echo "$ips")
 done
 
 # Allow host network so docker-internal traffic still works.
