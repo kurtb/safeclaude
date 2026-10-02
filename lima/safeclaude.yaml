@@ -1,0 +1,74 @@
+# safeclaude VM profile (Lima) — MINIMAL bootable skeleton.
+#
+# The heavy-isolation / comfortable-k8s lane. A full QEMU VM (real kernel, full
+# device model) so Docker + minikube's `docker` driver work natively, and — with
+# host nested virt — even minikube's `kvm2` driver (the guest gets a real
+# /dev/kvm, which Firecracker withholds).
+#
+# This skeleton boots and installs just enough to prove the model (Docker +
+# Claude Code). Finish the rest of the toolchain (zsh/dotzsh, node/fnm, bun,
+# codex, gstack, yolo-* wrappers, safeclaude-doctor) from inside the VM — reuse
+# the Dockerfile steps.
+#
+# Boot:  limactl start --name=safeclaude-<proj> ./lima/safeclaude.yaml
+#        (normally via the lima/safeclaude-vm.zsh wrapper — walk up + boot)
+#
+# Boundary: the guest has root (Docker needs it); egress is NOT trusted to the
+# guest. It is enforced HOST-SIDE by vm-firewall.sh on the VM's interface.
+
+vmType: "qemu"
+os: "Linux"
+
+images:
+  # TODO: pin a digest before real use (Lima warns on unpinned images).
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+
+cpus: 4
+memory: "8GiB"
+disk: "60GiB"
+
+# Bind-mount ONLY the project dir (scoped hole, like the container). The wrapper
+# sets LIMA_PROJECT to $PWD; nothing else on the host is reachable.
+# (For the hermetic/clone model — the fleet lane — drop this mount entirely.)
+mounts:
+  - location: "{{ or (index .Param \"PROJECT\") \"/tmp/safeclaude-noproject\" }}"
+    mountPoint: "/home/ubuntu.linux/workspace"
+    writable: true
+
+# Dedicated host interface so egress is filterable. Lima's default user-mode
+# (SLIRP) NAT exposes no host tap; a socket_vmnet shared network gives the VM a
+# real interface (e.g. lima0) for nftables to govern.
+# REQUIRES socket_vmnet on the host — see README wrinkle #1.
+networks:
+  - lima: shared
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      # Docker — native in a VM (no DinD, no host-socket mount).
+      curl -fsSL https://get.docker.com | sh
+      usermod -aG docker "$(id -un 1000 2>/dev/null || echo ubuntu.linux)"
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux
+      # Claude Code — runs identically to the container; the agent is substrate-agnostic.
+      curl -fsSL https://downloads.claude.ai/install.sh | bash || true
+
+probes:
+  - script: |
+      #!/bin/bash
+      command -v docker >/dev/null || exit 1
+    hint: "docker not provisioned yet"
+
+message: |
+  VM up. Enforce egress from the HOST before trusting the guest:
+      sudo ./lima/vm-firewall.sh lima0     # use the VM's host interface name
+  Then:  limactl shell {{.Name}}
