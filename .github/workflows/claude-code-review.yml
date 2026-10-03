@@ -36,9 +36,26 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          # Consolidate the whole review into ONE PR comment (updated in place on
+          # re-runs) instead of scattered inline notes. Without this the action
+          # posts nothing in automation mode — the job goes green but silent.
+          use_sticky_comment: true
+          prompt: |
+            Review pull request #${{ github.event.pull_request.number }} of
+            ${{ github.repository }}. Inspect the diff with `gh pr diff` and read
+            surrounding files for context as needed.
+
+            Focus on real correctness and security bugs and risky changes; call
+            out smaller reuse/simplification/efficiency cleanups briefly. For this
+            repo, flag any change to the firewall egress allowlist/surface, since
+            that is a security-posture change.
+
+            Write ONE consolidated review as your final message, organized by
+            severity (Blocking / Should-fix / Nits), with file:line references.
+            If nothing needs changing, say so explicitly. The action posts your
+            final message as the single PR comment — do not post comments yourself.
+          # Read-only tools: inspect the change, but let the action do the posting.
+          claude_args: '--allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
 
