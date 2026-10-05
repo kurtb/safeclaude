@@ -51,7 +51,13 @@ is_running() { local s; s="$(incus info "$name" 2>/dev/null)"; printf '%s' "$s" 
 
 clone_repo() {
   [ -n "$repo" ] || { echo "no git origin in \$PWD; starting empty workspace"; return 0; }
-  case "$repo" in git@*|ssh://*) echo "SSH remote ($repo): only HTTPS egress is allowed and no keys are present; use the HTTPS URL." >&2; return 0;; esac
+  # Only https:// is cloneable (SSH has no keys/egress; reject ext::/git:: etc.).
+  case "$repo" in
+    https://*) ;;
+    *) echo "origin '$repo' is not https://; skipping clone (use the HTTPS URL)." >&2; return 0 ;;
+  esac
+  # Strip any embedded userinfo (user:token@host) so creds don't reach the guest/argv.
+  repo="$(printf '%s' "$repo" | sed -E 's#^https://[^/@]*@#https://#')"
   local dir; dir="/root/workspace/$(basename "${repo%.git}")"
   incus exec "$name" -- test -d "$dir/.git" >/dev/null 2>&1 && return 0
   # Wait for cloud-init to finish (git/gh/docker come from it), not just the agent.
@@ -77,22 +83,26 @@ wait_agent() {
   echo "WARNING: guest agent not ready; cloud-init may still be running" >&2
 }
 
+cmd_ensure() {
+  need; ensure_network; create_if_absent
+  # Run the ROOT-OWNED installed copy, not the checkout (review #25 blocking #1).
+  local egress=/usr/local/lib/devvm/host-egress.sh
+  [ -x "$egress" ] || { echo "host egress not installed; run: sudo \"$VMDIR/install-host.sh\"" >&2; exit 1; }
+  sudo "$egress"                                # host egress re-applied every run (never fail open)
+  is_running || incus start "$name"
+  wait_agent; clone_repo
+}
+
+cmd_shell() {
+  need
+  # cd into the single clone if there's exactly one, else the workspace root.
+  exec incus exec "$name" -- bash -lc 'd=(/root/workspace/*/); [ ${#d[@]} -eq 1 ] && [ -d "${d[0]}" ] && cd "${d[0]}" || cd /root/workspace; exec bash -l'
+}
+
 case "$verb" in
-  ensure)
-    need; ensure_network; create_if_absent
-    # Run the ROOT-OWNED installed copy, not the checkout (review #25 blocking #1).
-    local egress=/usr/local/lib/devvm/host-egress.sh
-    [ -x "$egress" ] || { echo "host egress not installed; run: sudo \"$VMDIR/install-host.sh\"" >&2; exit 1; }
-    sudo "$egress"                              # host egress re-applied every run (never fail open)
-    is_running || incus start "$name"
-    wait_agent; clone_repo
-    ;;
-  shell)
-    need
-    # cd into the single clone if there's exactly one, else the workspace root.
-    exec incus exec "$name" -- bash -lc 'd=(/root/workspace/*/); [ ${#d[@]} -eq 1 ] && [ -d "${d[0]}" ] && cd "${d[0]}" || cd /root/workspace; exec bash -l'
-    ;;
-  stop) need; incus stop "$name" ;;
-  rm)   need; incus delete -f "$name" ;;
+  ensure) cmd_ensure ;;
+  shell)  cmd_shell ;;
+  stop)   need; incus stop "$name" ;;
+  rm)     need; incus delete -f "$name" ;;
   *) echo "unknown verb: $verb" >&2; exit 1 ;;
 esac

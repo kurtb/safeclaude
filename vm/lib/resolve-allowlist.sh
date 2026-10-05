@@ -52,6 +52,8 @@ collect() {
   if echo "$derp" | jq -e '.Regions' >/dev/null 2>&1; then
     echo "$derp" | jq -r '.Regions[].Nodes[] | (.IPv4 // empty), (.IPv6 // empty)' \
       | sed -E 's#^([0-9.]+)$#\1/32#; s#^([0-9a-fA-F:]+)$#\1/128#'
+  else
+    echo "WARNING: Tailscale DERP map fetch failed; relay IPs omitted" >&2
   fi
 
   # allowlist.conf: resolve each host. 'cidr:' widens IPv4 to /24.

@@ -30,14 +30,21 @@ _devvm_sanitize() {
   printf 'devvm-%s-%s' "$s" "$h"       # 6 + <=48 + 1 + 6 = <=61 <= 63
 }
 
+# Short stable hash, portable across Linux (sha1sum) and macOS (shasum); cksum
+# is the last-resort fallback.
+_devvm_hash() {
+  if command -v sha1sum >/dev/null 2>&1; then printf '%s' "$1" | sha1sum | cut -c1-8
+  elif command -v shasum >/dev/null 2>&1; then printf '%s' "$1" | shasum | cut -c1-8
+  else printf '%08x' "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"; fi
+}
+
 # --name may appear anywhere; default to the current dir's basename.
 _devvm_name() {
   local a raw="" prev=""
   for a in "$@"; do [ "$prev" = --name ] && { raw="$a"; break; }; prev="$a"; done
   local slug ident
   if [ -n "$raw" ]; then slug="$raw"; ident="name:$raw"; else slug="$(basename "$PWD")"; ident="$PWD"; fi
-  local h; h="$(printf '%06x' "$(( $(printf '%s' "$ident" | cksum | cut -d' ' -f1) & 0xffffff ))")"
-  _devvm_sanitize "$slug" "$h"
+  _devvm_sanitize "$slug" "$(_devvm_hash "$ident")"
 }
 
 # Verb = first up|shell|stop|rm token, skipping --name <value>; default up.
