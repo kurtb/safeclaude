@@ -1,0 +1,16 @@
+#cloud-config
+# Shared guest provisioning — identical across all OS drivers.
+# Runs on first boot. Because drivers apply the egress allowlist BEFORE first
+# boot (create stopped -> apply ACL -> start), this provisioning runs under the
+# allowlist, so every host it touches must be in allowlist.conf.
+package_update: true
+packages: [curl, git, jq]
+runcmd:
+  # Docker — native in a VM (no DinD, no host-socket mount).
+  - [ bash, -lc, "curl -fsSL https://get.docker.com | sh" ]
+  # Claude Code — substrate-agnostic; same installer as the container image.
+  - [ bash, -lc, "curl -fsSL https://downloads.claude.ai/install.sh | bash || true" ]
+  - [ bash, -lc, "install -d -m 0755 /root/workspace" ]
+# TODO: port the rest of the Dockerfile toolchain (node/fnm, bun, codex, gstack,
+# yolo-* wrappers, safeclaude-doctor) and pin versions. Share steps with the
+# Dockerfile so the VM and image toolchains don't drift.
