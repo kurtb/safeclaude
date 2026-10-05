@@ -34,13 +34,23 @@ for f in "$HERE" "$CONF" "$SQUIDCONF" "$RESOLVE"; do
 done
 
 domains="$(grep -vE '^\s*#|^\s*$' "$CONF" | sed 's/^cidr://' | sort -u)"
-mapfile -t allowed4 < <("$RESOLVE" | grep -v ':' || true)       # no word-splitting
+
+# Resolve to a temp file so a resolver failure is NOT swallowed by a pipe/|| true
+# (review: a silent empty set bricks the VM with no diagnostic). Fail loud and
+# keep the existing rules rather than applying an empty (deny-all) set.
+rtmp="$(mktemp)"; trap 'rm -f "$rtmp"' EXIT
+"$RESOLVE" > "$rtmp" || { echo "FATAL: allowlist resolver failed; keeping existing egress rules" >&2; exit 1; }
+mapfile -t allowed4 < <(grep -v ':' "$rtmp" || true)
 elems="$(printf '%s\n' "${allowed4[@]:-}" | sed '/^$/d' | paste -sd, -)"
+[ -n "$elems" ] || { echo "FATAL: resolved allowlist is empty; refusing to apply (would cut all VM egress). Check DNS/network." >&2; exit 1; }
 
 # 1) Squid allowlist + config.
 install -d /etc/squid
 printf '%s\n' "$domains" > /etc/squid/devvm-allowed-domains
-install -D "$SQUIDCONF" /etc/squid/conf.d/devvm.conf   # VERIFY conf.d order; needs squid-openssl
+# Template the bind IP in (squid.conf ships a @PROXY_IP@ placeholder so DEVVM_*
+# overrides don't silently desync it). VERIFY conf.d include order; needs squid-openssl.
+install -d /etc/squid/conf.d
+sed "s/@PROXY_IP@/$PROXY_IP/g" "$SQUIDCONF" > /etc/squid/conf.d/devvm.conf
 systemctl reload squid 2>/dev/null || systemctl restart squid
 
 # 2) DEDICATED allowlist-only dnsmasq (does NOT touch the host's own dnsmasq).
@@ -54,8 +64,17 @@ dconf=/run/devvm-dnsmasq.conf
   echo "pid-file=/run/devvm-dnsmasq.pid"
   while IFS= read -r d; do [ -n "$d" ] && echo "server=/$d/1.1.1.1"; done <<< "$domains"
 } > "$dconf"
-[ -f /run/devvm-dnsmasq.pid ] && kill "$(cat /run/devvm-dnsmasq.pid)" 2>/dev/null || true
-dnsmasq --conf-file="$dconf"   # VERIFY: own instance; survives via a systemd unit in prod
+# Stop a prior dedicated instance, verifying the PID is really our dnsmasq (not a
+# recycled PID), and wait for it to exit before rebinding :53. VERIFY: a systemd
+# unit is the right prod answer; this is the scaffold stop-gap.
+if [ -f /run/devvm-dnsmasq.pid ]; then
+  oldpid="$(cat /run/devvm-dnsmasq.pid 2>/dev/null || true)"
+  if [ -n "$oldpid" ] && [ "$(cat "/proc/$oldpid/comm" 2>/dev/null || true)" = dnsmasq ]; then
+    kill "$oldpid" 2>/dev/null || true
+    for _ in $(seq 1 30); do [ -d "/proc/$oldpid" ] || break; sleep 0.1; done
+  fi
+fi
+dnsmasq --conf-file="$dconf"
 
 # 3) nftables — ONE atomic transaction (add-before-delete; never leaves the
 #    table gone / fails open). Empty allowed4 => empty set => all egress dropped

@@ -39,11 +39,19 @@ drop_bogons() {
 }
 
 collect() {
-  # GitHub published ranges (IPv4 + IPv6).
-  local gh
-  gh="$(curl -fsS https://api.github.com/meta)" || { echo "github meta fetch failed" >&2; exit 1; }
-  echo "$gh" | jq -e '.web and .api and .git and .pages' >/dev/null \
-    || { echo "github meta missing fields" >&2; exit 1; }
+  # GitHub published ranges (IPv4 + IPv6). Cache the response and reuse the last
+  # good copy on failure — unauthenticated api.github.com/meta is 60 req/hr/IP
+  # and this runs on every `devvm up`.
+  local gh cache="${DEVVM_CACHE_DIR:-/run/devvm}/github-meta.json"
+  mkdir -p "$(dirname "$cache")" 2>/dev/null || cache="${TMPDIR:-/tmp}/devvm-github-meta.json"
+  if gh="$(curl -fsS https://api.github.com/meta)" && echo "$gh" | jq -e '.web and .api and .git and .pages' >/dev/null 2>&1; then
+    printf '%s' "$gh" > "$cache" 2>/dev/null || true
+  else
+    gh="$(cat "$cache" 2>/dev/null || true)"
+    [ -n "$gh" ] && echo "WARNING: github meta fetch failed; using cached copy" >&2
+  fi
+  echo "$gh" | jq -e '.web and .api and .git and .pages' >/dev/null 2>&1 \
+    || { echo "github meta unavailable (no fetch, no cache)" >&2; exit 1; }
   echo "$gh" | jq -r '(.web + .api + .git + .pages)[]'
 
   # Tailscale DERP relay IPs (best-effort).

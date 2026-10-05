@@ -22,7 +22,7 @@ ensure_network() {
   # Dedicated bridge; Incus's own firewalling OFF (our nftables own egress),
   # dns.mode=none (our allowlist-only dnsmasq owns DNS), and nat=false — Squid
   # originates from the host, so the guest never needs NAT; leaving it off means
-  # any hole in the forward chain isn't real egress (review #25 should-fix #3).
+  # any hole in the forward chain isn't real egress.
   # VERIFY subnet matches DEVVM_SUBNET in host-egress.sh (10.63.0.0/24).
   incus network create "$NET" \
     ipv4.address=10.63.0.1/24 ipv4.nat=false ipv4.firewall=false \
@@ -39,7 +39,7 @@ create_if_absent() {
     -c cloud-init.user-data="$(cat "$VMDIR/cloud-init.yaml")" \
     --network "$NET"
   # Don't auto-start on host boot: nft rules aren't persisted, so an autostarted
-  # VM could come up before egress is applied (review #25 blocking #2b). `devvm`
+  # VM could come up before egress is applied. `devvm`
   # re-applies egress on every ensure before starting.
   incus config set "$name" boot.autostart=false
   # Nested virt for minikube's kvm2 depends on HOST nested virt being on
@@ -58,7 +58,10 @@ clone_repo() {
   esac
   # Strip any embedded userinfo (user:token@host) so creds don't reach the guest/argv.
   repo="$(printf '%s' "$repo" | sed -E 's#^https://[^/@]*@#https://#')"
-  local dir; dir="/root/workspace/$(basename "${repo%.git}")"
+  local base; base="$(basename "${repo%.git}")"
+  [[ "$base" =~ ^[A-Za-z0-9._-]+$ ]] && [ "$base" != . ] && [ "$base" != .. ] \
+    || { echo "refusing odd repo dir name derived from origin: '$base'" >&2; return 1; }
+  local dir="/root/workspace/$base"
   incus exec "$name" -- test -d "$dir/.git" >/dev/null 2>&1 && return 0
   # Wait for cloud-init to finish (git/gh/docker come from it), not just the agent.
   incus exec "$name" -- cloud-init status --wait >/dev/null 2>&1 || true
@@ -85,7 +88,7 @@ wait_agent() {
 
 cmd_ensure() {
   need; ensure_network; create_if_absent
-  # Run the ROOT-OWNED installed copy, not the checkout (review #25 blocking #1).
+  # Run the ROOT-OWNED installed copy, not the checkout.
   local egress=/usr/local/lib/devvm/host-egress.sh
   [ -x "$egress" ] || { echo "host egress not installed; run: sudo \"$VMDIR/install-host.sh\"" >&2; exit 1; }
   sudo "$egress"                                # host egress re-applied every run (never fail open)
