@@ -2,6 +2,13 @@
 
 Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) in YOLO mode — `--dangerously-skip-permissions` is fine here because the container has no path to your host filesystem outside the project you mounted, and a default-deny firewall restricts outbound network to an allowlist (Anthropic, OpenAI, Google AI, Langfuse, GitHub, npm, PyPI, gcloud, Pulumi, Kubernetes/Helm, container registries, Tailscale).
 
+> **Experimental VM lane (`vm/`).** For work that needs native Docker/minikube
+> or a hard (separate-kernel) isolation boundary, `devvm` boots a per-project VM
+> with a host-enforced, default-deny egress allowlist — Incus on Linux, with
+> macOS/WSL2 drivers planned. It's a complementary lane, not a replacement for
+> the container. See [`vm/README.md`](vm/README.md). Status: scaffold, not yet
+> validated on a live Incus host.
+
 ## What's included
 
 | Layer | Details |
