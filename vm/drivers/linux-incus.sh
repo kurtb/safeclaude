@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Linux driver: Incus VM, CLONE-ONLY, host-enforced egress via SNI proxy.
+# Linux driver: Incus VM, CLONE-ONLY, host-enforced egress via dest-IP pin +
+# SNI proxy + allowlist-only DNS (see lib/host-egress.sh).
 #
-# Strongest of the OS drivers. No host filesystem is mounted into the guest
-# (clone-only), and all egress is forced host-side through a transparent SNI
-# allowlist proxy + allowlist-only DNS (see lib/host-egress.sh) that guest-root
-# cannot touch. Edit the in-VM clone via VS Code Remote-SSH.
+# Strongest of the OS drivers. No host filesystem is mounted (clone-only), and
+# all egress is enforced host-side where guest-root can't reach it. Edit the
+# in-VM clone via VS Code Remote-SSH.
 #
 # Verbs (from ../devvm.sh):  ensure <name> <repo> <vmdir> | shell | stop | rm
 #
@@ -19,11 +19,12 @@ need() { command -v incus >/dev/null || { echo "incus not installed" >&2; exit 1
 
 ensure_network() {
   incus network show "$NET" >/dev/null 2>&1 && return 0
-  # Dedicated bridge with Incus's own firewalling DISABLED, so our nftables in
-  # host-egress.sh own the policy without Incus fighting them. VERIFY subnet
-  # matches DEVVM_SUBNET in host-egress.sh (10.63.0.0/24).
+  # Dedicated bridge; Incus's own firewalling OFF (our nftables own egress) and
+  # dns.mode=none so our allowlist-only dnsmasq doesn't collide with Incus's.
+  # VERIFY subnet matches DEVVM_SUBNET in host-egress.sh (10.63.0.0/24).
   incus network create "$NET" \
-    ipv4.address=10.63.0.1/24 ipv4.nat=true ipv4.firewall=false ipv6.address=none
+    ipv4.address=10.63.0.1/24 ipv4.nat=true ipv4.firewall=false \
+    dns.mode=none ipv6.address=none
 }
 
 create_if_absent() {
@@ -35,21 +36,28 @@ create_if_absent() {
     -c limits.cpu=4 -c limits.memory=8GiB \
     -c cloud-init.user-data="$(cat "$VMDIR/cloud-init.yaml")" \
     --network "$NET"
-  incus config set "$name" limits.kernel.modules=kvm || true   # nested virt; VERIFY
+  # Nested virt for minikube's kvm2 depends on HOST nested virt being on
+  # (kvm_intel/amd nested=1); there's no per-instance VM flag. docker driver
+  # needs no nesting. VERIFY on the target host.
 }
+
+is_running() { local s; s="$(incus info "$name" 2>/dev/null)"; printf '%s' "$s" | grep -qi 'Status: RUNNING'; }
 
 clone_repo() {
   [ -n "$repo" ] || { echo "no git origin in \$PWD; starting empty workspace"; return 0; }
+  case "$repo" in git@*|ssh://*) echo "SSH remote ($repo): only HTTPS egress is allowed and no keys are present; use the HTTPS URL." >&2; return 0;; esac
   local dir; dir="/root/workspace/$(basename "${repo%.git}")"
   incus exec "$name" -- test -d "$dir/.git" >/dev/null 2>&1 && return 0
-  # gh auth inside the guest (token via stdin, never in argv/logs). Out-of-band,
-  # like the container's gh-auth-setup.
+  # Wait for cloud-init to finish (git/gh/docker come from it), not just the agent.
+  incus exec "$name" -- cloud-init status --wait >/dev/null 2>&1 || true
+  # gh auth via stdin (never in argv/logs). Out-of-band, like gh-auth-setup.
   if [ -n "${GH_TOKEN:-}" ]; then
     printf '%s' "$GH_TOKEN" | incus exec "$name" -- gh auth login --with-token \
       && incus exec "$name" -- gh auth setup-git || true
   fi
-  echo "Cloning $repo into the guest ..."
-  incus exec "$name" -- bash -lc "install -d /root/workspace && git clone '$repo' '$dir'" \
+  echo "Cloning into the guest ..."
+  # repo/dir passed as positional args ($1/$2), never spliced into the string.
+  incus exec "$name" -- bash -lc 'install -d /root/workspace && git clone "$1" "$2"' _ "$repo" "$dir" \
     || echo "clone failed (private repo? set GH_TOKEN before 'devvm up')" >&2
 }
 
@@ -61,9 +69,8 @@ wait_agent() {
 case "$verb" in
   ensure)
     need; ensure_network; create_if_absent
-    # Host egress re-applied EVERY run (never fail open).
-    sudo "$VMDIR/lib/host-egress.sh"
-    incus info "$name" | grep -qi 'Status: RUNNING' || incus start "$name"
+    sudo "$VMDIR/lib/host-egress.sh"            # host egress re-applied every run (never fail open)
+    is_running || incus start "$name"
     wait_agent; clone_repo
     ;;
   shell)

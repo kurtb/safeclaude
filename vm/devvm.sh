@@ -21,13 +21,15 @@ _DEVVM_HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 _devvm_sanitize() {
   local s
   s="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
-  [[ "$s" =~ ^[a-z] ]] || s="vm-$s"
-  printf 'devvm-%s' "${s:0:56}"        # "devvm-" (6) + 56 = 62 <= 63
+  s="${s:0:56}"; s="${s%-}"            # trim to 56, then drop any trailing dash
+  [[ "$s" =~ ^[a-z] ]] || s="vm-$s"    # Incus names need a leading letter
+  s="${s%-}"; [ -n "$s" ] || s="vm"
+  printf 'devvm-%s' "$s"               # "devvm-" (6) + <=56 = <=62 <= 63
 }
 
 # --name may appear anywhere; default to the current dir's basename.
 _devvm_name() {
-  local n="" prev=""
+  local a n="" prev=""
   for a in "$@"; do [ "$prev" = --name ] && { n="$a"; break; }; prev="$a"; done
   [ -n "$n" ] || n="$(basename "$PWD")"
   _devvm_sanitize "$n"
@@ -35,7 +37,7 @@ _devvm_name() {
 
 # Verb = first up|shell|stop|rm token, skipping --name <value>; default up.
 _devvm_verb() {
-  local v="up" skip=0
+  local a v="up" skip=0
   for a in "$@"; do
     if [ "$skip" = 1 ]; then skip=0; continue; fi
     case "$a" in --name) skip=1 ;; up|shell|stop|rm) v="$a"; break ;; esac

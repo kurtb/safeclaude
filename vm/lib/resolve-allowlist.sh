@@ -32,6 +32,7 @@ drop_bogons() {
     -e '^198\.(1[89])\.' \
     -e '^(22[4-9]|2[3-5][0-9])\.' \
     -e '^(::1|::)(/|$)' \
+    -e '^::ffff:' \
     -e '^f[cd]' \
     -e '^fe[89ab]' \
     -e '^ff'
@@ -71,4 +72,6 @@ collect() {
   done < "$CONF"
 }
 
-collect | drop_bogons | sort -u
+# `|| true` so an all-filtered (grep exit 1) or empty result doesn't abort under
+# pipefail; an empty allowlist is a valid (fully-closed) outcome.
+collect | { drop_bogons || true; } | sort -u
