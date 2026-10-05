@@ -18,21 +18,26 @@
 _DEVVM_HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 # Incus-safe instance name: lowercase, [a-z0-9-] only, leading letter, <=63 chars.
+# Build an Incus-valid name: devvm-<slug48>-<hash6>. The hash of the full
+# identity (abs path, or the explicit --name) disambiguates two projects that
+# share a basename (e.g. ~/a/web and ~/b/web) — review #25 nit.
 _devvm_sanitize() {
-  local s
-  s="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
-  s="${s:0:56}"; s="${s%-}"            # trim to 56, then drop any trailing dash
-  [[ "$s" =~ ^[a-z] ]] || s="vm-$s"    # Incus names need a leading letter
+  local s="$1" h="$2"
+  s="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+  s="${s:0:48}"; s="${s%-}"
+  [[ "$s" =~ ^[a-z] ]] || s="vm-$s"
   s="${s%-}"; [ -n "$s" ] || s="vm"
-  printf 'devvm-%s' "$s"               # "devvm-" (6) + <=56 = <=62 <= 63
+  printf 'devvm-%s-%s' "$s" "$h"       # 6 + <=48 + 1 + 6 = <=61 <= 63
 }
 
 # --name may appear anywhere; default to the current dir's basename.
 _devvm_name() {
-  local a n="" prev=""
-  for a in "$@"; do [ "$prev" = --name ] && { n="$a"; break; }; prev="$a"; done
-  [ -n "$n" ] || n="$(basename "$PWD")"
-  _devvm_sanitize "$n"
+  local a raw="" prev=""
+  for a in "$@"; do [ "$prev" = --name ] && { raw="$a"; break; }; prev="$a"; done
+  local slug ident
+  if [ -n "$raw" ]; then slug="$raw"; ident="name:$raw"; else slug="$(basename "$PWD")"; ident="$PWD"; fi
+  local h; h="$(printf '%06x' "$(( $(printf '%s' "$ident" | cksum | cut -d' ' -f1) & 0xffffff ))")"
+  _devvm_sanitize "$slug" "$h"
 }
 
 # Verb = first up|shell|stop|rm token, skipping --name <value>; default up.

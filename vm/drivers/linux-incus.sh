@@ -19,11 +19,13 @@ need() { command -v incus >/dev/null || { echo "incus not installed" >&2; exit 1
 
 ensure_network() {
   incus network show "$NET" >/dev/null 2>&1 && return 0
-  # Dedicated bridge; Incus's own firewalling OFF (our nftables own egress) and
-  # dns.mode=none so our allowlist-only dnsmasq doesn't collide with Incus's.
+  # Dedicated bridge; Incus's own firewalling OFF (our nftables own egress),
+  # dns.mode=none (our allowlist-only dnsmasq owns DNS), and nat=false — Squid
+  # originates from the host, so the guest never needs NAT; leaving it off means
+  # any hole in the forward chain isn't real egress (review #25 should-fix #3).
   # VERIFY subnet matches DEVVM_SUBNET in host-egress.sh (10.63.0.0/24).
   incus network create "$NET" \
-    ipv4.address=10.63.0.1/24 ipv4.nat=true ipv4.firewall=false \
+    ipv4.address=10.63.0.1/24 ipv4.nat=false ipv4.firewall=false \
     dns.mode=none ipv6.address=none
 }
 
@@ -36,6 +38,10 @@ create_if_absent() {
     -c limits.cpu=4 -c limits.memory=8GiB \
     -c cloud-init.user-data="$(cat "$VMDIR/cloud-init.yaml")" \
     --network "$NET"
+  # Don't auto-start on host boot: nft rules aren't persisted, so an autostarted
+  # VM could come up before egress is applied (review #25 blocking #2b). `devvm`
+  # re-applies egress on every ensure before starting.
+  incus config set "$name" boot.autostart=false
   # Nested virt for minikube's kvm2 depends on HOST nested virt being on
   # (kvm_intel/amd nested=1); there's no per-instance VM flag. docker driver
   # needs no nesting. VERIFY on the target host.
@@ -50,14 +56,19 @@ clone_repo() {
   incus exec "$name" -- test -d "$dir/.git" >/dev/null 2>&1 && return 0
   # Wait for cloud-init to finish (git/gh/docker come from it), not just the agent.
   incus exec "$name" -- cloud-init status --wait >/dev/null 2>&1 || true
-  # gh auth via stdin (never in argv/logs). Out-of-band, like gh-auth-setup.
+  # gh auth via stdin (never in argv/logs). The token is handed to a guest-root
+  # agent and persisted there, so use a FINE-GRAINED, READ-ONLY, repo-scoped
+  # token — treat it as compromised-on-use. Failures are reported, not swallowed.
   if [ -n "${GH_TOKEN:-}" ]; then
-    printf '%s' "$GH_TOKEN" | incus exec "$name" -- gh auth login --with-token \
-      && incus exec "$name" -- gh auth setup-git || true
+    if printf '%s' "$GH_TOKEN" | incus exec "$name" -- gh auth login --with-token; then
+      incus exec "$name" -- gh auth setup-git || echo "WARNING: gh auth setup-git failed" >&2
+    else
+      echo "WARNING: gh auth login failed (token invalid/expired?)" >&2
+    fi
   fi
   echo "Cloning into the guest ..."
   # repo/dir passed as positional args ($1/$2), never spliced into the string.
-  incus exec "$name" -- bash -lc 'install -d /root/workspace && git clone "$1" "$2"' _ "$repo" "$dir" \
+  incus exec "$name" -- bash -lc 'install -d /root/workspace && git clone -- "$1" "$2"' _ "$repo" "$dir" \
     || echo "clone failed (private repo? set GH_TOKEN before 'devvm up')" >&2
 }
 
@@ -69,13 +80,17 @@ wait_agent() {
 case "$verb" in
   ensure)
     need; ensure_network; create_if_absent
-    sudo "$VMDIR/lib/host-egress.sh"            # host egress re-applied every run (never fail open)
+    # Run the ROOT-OWNED installed copy, not the checkout (review #25 blocking #1).
+    local egress=/usr/local/lib/devvm/host-egress.sh
+    [ -x "$egress" ] || { echo "host egress not installed; run: sudo \"$VMDIR/install-host.sh\"" >&2; exit 1; }
+    sudo "$egress"                              # host egress re-applied every run (never fail open)
     is_running || incus start "$name"
     wait_agent; clone_repo
     ;;
   shell)
     need
-    exec incus exec "$name" -- bash -lc 'cd /root/workspace/* 2>/dev/null || cd /root/workspace; exec bash -l'
+    # cd into the single clone if there's exactly one, else the workspace root.
+    exec incus exec "$name" -- bash -lc 'd=(/root/workspace/*/); [ ${#d[@]} -eq 1 ] && [ -d "${d[0]}" ] && cd "${d[0]}" || cd /root/workspace; exec bash -l'
     ;;
   stop) need; incus stop "$name" ;;
   rm)   need; incus delete -f "$name" ;;

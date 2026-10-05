@@ -8,9 +8,13 @@
 package_update: true
 packages: [curl, git, jq, gh]
 runcmd:
-  # Docker — native in a VM (no DinD, no host-socket mount).
+  # Docker — native in a VM (no DinD, no host-socket mount). NOTE: get.docker.com
+  # is an unpinned root installer (upstream provides no pinned URL); the egress
+  # allowlist is the mitigation. TODO: pin to a packaged docker-ce version.
   - [ bash, -lc, "curl -fsSL https://get.docker.com | sh" ]
   # Claude Code — substrate-agnostic; same installer as the container image.
+  # NOTE: `|| true` means a failed install is non-fatal to first boot (re-runs
+  # pick it up); check `claude --version` after boot.
   - [ bash, -lc, "curl -fsSL https://downloads.claude.ai/install.sh | bash || true" ]
   - [ bash, -lc, "install -d -m 0755 /root/workspace" ]
   # VS Code Remote-SSH attaches here; sshd is already in the cloud image.

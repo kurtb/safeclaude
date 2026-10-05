@@ -25,8 +25,9 @@ devvm [up|shell|stop|rm] [--name X]
 
 ## Boundary model (Linux driver)
 
-Egress is enforced **entirely on the host**, where guest-root can't reach it.
-Two independent gates must BOTH pass (either alone is bypassable):
+Egress is enforced **entirely on the host** (from a root-owned install dir, see
+below), where guest-root can't reach it. Layered gates, each closing a bypass the
+others don't:
 
 1. **Destination-IP pin (nftables set)** — only `:80/:443` to an allowlisted,
    **SSRF-filtered** IP (from `resolve-allowlist.sh`, dropping loopback/RFC1918/
@@ -46,6 +47,28 @@ Clone-only: `devvm` reads the current folder's git remote and the guest clones i
 into `/root/workspace`; nothing is mounted from the host. Edit via **VS Code
 Remote-SSH**. Private repos: `export GH_TOKEN=…` before `devvm up`.
 
+## Known limitations (accepted — same posture as the container)
+
+These are inherent to a name/IP allowlist and are **not** fixable without a
+full MITM forward proxy or an app-layer gateway. Called out honestly rather than
+claimed solved:
+
+- **Shared-CDN domain fronting.** An allowlisted IP + allowlisted SNI with a
+  different Host can still exfil to another tenant on the same CDN
+  (`claude.ai`, `chatgpt.com`, Cloudflare-fronted hosts). `host_verify_strict`
+  only covers plaintext HTTP.
+- **Subdomain DNS tunneling.** `server=/<zone>/…` resolves any subdomain of an
+  allowlisted zone, so a slow DNS tunnel under such a zone is possible.
+- **General-purpose allowlisted hosts** (`github.com`, `sentry.io`,
+  `statsig.com`, gists/raw) are usable as exfil channels by a hostile agent.
+- **CDN drift vs. the dest-IP pin.** The pin is a `dig` snapshot; CDN-fronted
+  hosts can rotate to IPs not in the set and get dropped intermittently.
+- **`GH_TOKEN`** is persisted inside a guest-root VM — use a fine-grained,
+  read-only, repo-scoped token.
+
+This is the same boundary the container accepts: it stops *accidental* and
+*broad* egress, not a determined exfil via an allowlisted service.
+
 ## Finish / validate on a real Incus host (VERIFY markers inline)
 
 No KVM/Incus on the build box, so the host-egress + driver paths are unrun and
@@ -53,8 +76,12 @@ unverified. What's been checked on the build box: the SSRF filter
 (`resolve-allowlist.sh`) and the CLI parsing/sanitization (`devvm.sh`). To
 finish:
 
+0. `sudo ./install-host.sh` — installs the egress enforcement root-owned to
+   `/usr/local/lib/devvm` (the driver runs that copy, never the checkout).
 1. Install **`squid-openssl`** (stock `squid` is GnuTLS and lacks `ssl-bump`) +
-   `dnsmasq` + Incus (`incus admin init`). Install `host-egress.sh` root-owned.
+   `dnsmasq` (dedicated instance) + Incus (`incus admin init`). For reboot
+   persistence, add a systemd unit running the egress script before
+   `incus.service`.
 2. Generate the Squid splice cert (command in `proxy/squid.conf`); confirm the
    `conf.d` include lands before the default `http_access`.
 3. Confirm `devvmbr0` subnet matches `DEVVM_SUBNET`; confirm the allowlist-only
