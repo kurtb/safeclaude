@@ -12,7 +12,7 @@ Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) i
 | Python | 3.12 |
 | Shell | Zsh (via [dotzsh](https://github.com/kurtb/dotzsh)) |
 | Editors | Neovim (latest stable), Vim (via [dotvim](https://github.com/kurtb/dotvim)) |
-| Agents | Claude Code + Cursor (native installers, auto-update, in `~/.local/bin`); Codex (Rust binary from GitHub release, in `/usr/local/bin`, refreshed by `safeclaude build`); Gemini (npm global in `~/.npm-global`, manual `@latest` upgrade) |
+| Agents | Claude Code + Cursor (native installers, auto-update, in `~/.local/bin`); Codex (standalone installer, self-updates via `codex update`, in `~/.local/bin` → `~/.codex/packages/standalone`); Gemini (npm global in `~/.npm-global`, manual `@latest` upgrade) |
 | Skills | [gstack](https://github.com/garrytan/gstack) baked in — bun and Playwright Chromium (plus its runtime libraries) are included so the full suite works, including the browser-driven skills; personal skills via configurable [`dotclaude`](#personal-skills-dotclaude) repo |
 | Cloud | Google Cloud CLI, Pulumi (both in system paths) |
 | Tools | git, git-delta, gh (GitHub CLI), ripgrep, fzf, jq, less, build-essential, tmux |
@@ -208,7 +208,7 @@ dotclaude/
 `init-firewall.sh` (adapted from [anthropics/claude-code/.devcontainer](https://github.com/anthropics/claude-code/tree/main/.devcontainer)) sets iptables `OUTPUT` policy to `DROP`, then allows:
 
 - GitHub's published IP ranges (`web`, `api`, `git`, `pages` from `api.github.com/meta` — `pages` makes any `*.github.io` reachable)
-- Anthropic, OpenAI, Google AI / gcloud endpoints
+- Anthropic, OpenAI (api + login, plus `chatgpt.com` / `releases.openai.com` for the Codex installer and `codex update`), Google AI / gcloud endpoints
 - Langfuse (LLM observability — `langfuse.com`, `cloud.langfuse.com`, `us.cloud.langfuse.com`)
 - npm, PyPI, Bun, Ubuntu apt mirrors
 - Pulumi, GitHub auxiliary CDNs (objects, raw, codeload), GitHub Pages
@@ -314,9 +314,22 @@ changes.)
 
 Three upgrade paths, depending on tool:
 
-- **Image-controlled** (gh, gcloud, neovim, hadolint, shellcheck, pulumi, codex, bun, tailscale, firewall script, OS packages) live in `/usr` or `/opt`. Refreshed by a new image — `safeclaude build` (checkout) or a new GHCR publish — applied with `safeclaude recreate`.
-- **Self-updating** (Claude Code, Cursor) live in `~/.local/bin` and are seeded into the volume on first container start. They auto-update in the background. `safeclaude build` does NOT refresh them on existing volumes — they keep themselves current, or use `safeclaude rm` for a clean reset (costs a re-auth).
+- **Image-controlled** (gh, gcloud, neovim, hadolint, shellcheck, pulumi, bun, tailscale, firewall script, OS packages) live in `/usr` or `/opt`. Refreshed by a new image — `safeclaude build` (checkout) or a new GHCR publish — applied with `safeclaude recreate`.
+- **Self-updating** (Claude Code, Cursor, Codex) live in `~/.local/bin` and are seeded into the volume on first container start. Claude Code and Cursor auto-update in the background; Codex offers the upgrade in its TUI and applies it with `codex update` (it re-runs its installer, which is why `chatgpt.com` and `releases.openai.com` are allowlisted). `safeclaude build` does NOT refresh them on existing volumes — they keep themselves current, or use `safeclaude rm` for a clean reset (costs a re-auth).
 - **Manual** (Gemini CLI, fnm-managed node) live in the volume but neither auto-update nor are refreshed by image rebuilds. Upgrade via `npm install -g @google/gemini-cli@latest` / `fnm install <version>` inside the container, or wipe with `safeclaude rm`.
+
+> **Codex on a volume created before it moved into `$HOME`:** older images shipped
+> Codex as a bare binary in `/usr/local/bin`, which Codex treats as an
+> "unmanaged" install — `codex update` refuses, and the no-sudo `ubuntu` user
+> couldn't overwrite it anyway. The image no longer ships that copy, so on an
+> existing volume `codex` disappears after `safeclaude recreate` until you run
+> the installer once inside the container (`safeclaude-doctor` reminds you):
+>
+> ```zsh
+> curl -fsSL https://chatgpt.com/codex/install.sh | sh
+> ```
+>
+> From then on it lives in the volume and updates itself like the others.
 
 ## Testing a build
 

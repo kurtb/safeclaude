@@ -88,10 +88,13 @@ ALLOWED_DOMAINS=(
     "statsig.com"
     "sentry.io"
 
-    # OpenAI / Codex CLI
+    # OpenAI / Codex CLI (api + login; chatgpt.com also serves the standalone
+    # installer that `codex update` re-runs, and releases.openai.com hosts the
+    # release metadata + binaries it downloads — GitHub Releases is its fallback)
     "api.openai.com"
     "chatgpt.com"
     "auth.openai.com"
+    "releases.openai.com"
 
     # Google / Gemini CLI + gcloud
     "generativelanguage.googleapis.com"

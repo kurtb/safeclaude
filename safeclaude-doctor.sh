@@ -37,6 +37,16 @@ have python3 && echo "  python $(python3 --version 2>&1 | awk '{print $2}')"
 have gh      && echo "  gh     $(gh --version 2>/dev/null | head -1 | awk '{print $3}')"
 echo
 
+echo "codex install (must be the standalone layout for \`codex update\` to work):"
+if [ -x "$HOME/.codex/packages/standalone/current/bin/codex" ] \
+   && [ "$(command -v codex 2>/dev/null)" = "$HOME/.local/bin/codex" ]; then
+    ok "self-updating standalone install ($(codex --version 2>/dev/null | awk '{print $NF}'))"
+else
+    warns "codex is missing or unmanaged (pre-standalone volume?) — install/migrate with:"
+    echo "         curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+fi
+echo
+
 echo "yolo aliases (in ~/.zshrc):"
 for f in yolo-claude yolo-codex yolo-gemini yolo-cursor; do
     if grep -qE "^alias ${f}=" "$HOME/.zshrc" 2>/dev/null; then ok "$f defined"; else bad "$f not in ~/.zshrc"; fi

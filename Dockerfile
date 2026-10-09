@@ -94,21 +94,10 @@ RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
 RUN curl -fsSL https://get.pulumi.com | HOME=/opt bash -s -- --install-root /opt/pulumi --no-edit-path \
     && ln -sf /opt/pulumi/bin/pulumi /usr/local/bin/pulumi
 
-# ── Codex CLI (Rust binary from GitHub releases) ──────────────────────
-# OpenAI ships Codex as a Rust binary; the npm package is a thin wrapper
-# that downloads the same artifact. Pulling the binary directly avoids the
-# npm indirection and lets `safeclaude build` upgrade Codex.
-RUN ARCH=$(uname -m) \
-    && curl -fsSL -o /tmp/codex.tar.gz \
-       "https://github.com/openai/codex/releases/latest/download/codex-${ARCH}-unknown-linux-musl.tar.gz" \
-    && tar -xzf /tmp/codex.tar.gz -C /tmp \
-    && install -m 0755 /tmp/codex-${ARCH}-unknown-linux-musl /usr/local/bin/codex \
-    && rm -rf /tmp/codex.tar.gz /tmp/codex-${ARCH}-unknown-linux-musl
-
 # ── Bun (system path; doesn't self-update the system copy) ────────────
 # Required by gstack's setup, and a fast Node-compatible runtime/package
 # manager in its own right. Installed to /opt/bun and symlinked onto PATH so
-# `safeclaude build` controls the version (like pulumi/codex). Bump BUN_VERSION
+# `safeclaude build` controls the version (like pulumi). Bump BUN_VERSION
 # to upgrade; `bun upgrade` inside the container can also self-update the copy
 # seeded into the volume.
 ARG BUN_VERSION=1.3.10
@@ -183,13 +172,25 @@ ENV PATH=/home/ubuntu/.local/bin:${FNM_DIR}/aliases/default/bin:${PATH}
 # ── Agent CLIs (vendor-blessed paths) ─────────────────────────────────
 #   - Claude Code: native installer (auto-updates in background)
 #   - Cursor:      native installer (auto-updates by default)
-#   - Codex:       Rust binary from GitHub releases (installed above; system path)
+#   - Codex:       standalone installer (self-updates via `codex update`)
 #   - Gemini:      npm global — Google's only documented Linux path,
 #                  no compiled binary exists. Manual `@latest` upgrade.
 # Native installers drop binaries in ~/.local/bin; the npm install goes to
 # ~/.npm-global/bin (NPM_CONFIG_PREFIX set above). Both are on PATH.
+#
+# Codex MUST go through its own installer, not a bare binary copy: Codex only
+# recognises an install it can update when the binary lives under
+# ~/.codex/packages/standalone/ (which the installer sets up, symlinking
+# ~/.local/bin/codex into it). A binary dropped in /usr/local/bin is
+# "unmanaged" — `codex update` refuses, the TUI never offers an upgrade, and
+# the no-sudo ubuntu user couldn't overwrite it anyway. Living in $HOME, the
+# install is seeded into the volume and updates in place from then on. The
+# installer pulls from releases.openai.com (GitHub Releases as fallback), so
+# both are allowlisted in init-firewall.sh for in-container `codex update`.
+# CODEX_NON_INTERACTIVE=1 skips the "start Codex now?" prompt.
 RUN curl -fsSL https://claude.ai/install.sh | bash \
     && curl -fsS https://cursor.com/install | bash \
+    && curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh \
     && npm install -g @google/gemini-cli \
     && npm cache clean --force
 
