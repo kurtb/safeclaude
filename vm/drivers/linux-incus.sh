@@ -48,7 +48,9 @@ ensure_network() {
   fi
   # Make Incus's own dnsmasq allowlist-only, every run (so the list can't drift).
   local raw; raw="$(build_raw_dnsmasq)" || { echo "DNS allowlist build failed" >&2; return 1; }
-  incus network set "$NET" raw.dnsmasq "$raw"
+  # key=value form (the "key value" form is deprecated); $raw carries real
+  # newlines from the command substitution, preserved as one argument.
+  incus network set "$NET" "raw.dnsmasq=$raw"
 }
 
 create_if_absent() {
