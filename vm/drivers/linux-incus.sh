@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Linux driver: Incus VM, CLONE-ONLY, host-enforced egress via dest-IP pin +
-# SNI proxy + allowlist-only DNS (see lib/host-egress.sh).
+# SNI proxy (lib/host-egress.sh) + allowlist-only DNS (Incus's own dnsmasq,
+# made allowlist-only here via the network's raw.dnsmasq).
 #
 # Strongest of the OS drivers. No host filesystem is mounted (clone-only), and
 # all egress is enforced host-side where guest-root can't reach it. Edit the
@@ -17,16 +18,37 @@ NET="devvmbr0"
 
 need() { command -v incus >/dev/null || { echo "incus not installed" >&2; exit 1; }; }
 
+# Build allowlist-only DNS config for Incus's OWN dnsmasq (it owns :53 on the
+# bridge and serves DHCP — a second dnsmasq can't bind the port; confirmed on a
+# live host). `no-resolv` kills the default upstream; one server=/<domain>/<up>
+# per allowlisted host means only allowlisted zones resolve — everything else
+# gets no upstream => NXDOMAIN. Sourced from the installed root-owned allowlist
+# so DNS shares one list with the nft/Squid layers. Fails loud if absent.
+build_raw_dnsmasq() {
+  local c conf=""
+  for c in /usr/local/lib/devvm/allowlist.conf "$VMDIR/allowlist.conf"; do
+    [ -r "$c" ] && { conf="$c"; break; }
+  done
+  [ -n "$conf" ] || { echo "no allowlist.conf found for DNS (run install-host.sh)" >&2; return 1; }
+  echo "no-resolv"
+  grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$conf" | sed 's/^cidr://' | sort -u \
+    | while IFS= read -r d; do [ -n "$d" ] && echo "server=/$d/${DEVVM_DNS_UPSTREAM:-1.1.1.1}"; done
+}
+
 ensure_network() {
-  incus network show "$NET" >/dev/null 2>&1 && return 0
-  # Dedicated bridge; Incus's own firewalling OFF (our nftables own egress),
-  # dns.mode=none (our allowlist-only dnsmasq owns DNS), and nat=false — Squid
-  # originates from the host, so the guest never needs NAT; leaving it off means
-  # any hole in the forward chain isn't real egress.
-  # VERIFY subnet matches DEVVM_SUBNET in host-egress.sh (10.63.0.0/24).
-  incus network create "$NET" \
-    ipv4.address=10.63.0.1/24 ipv4.nat=false ipv4.firewall=false \
-    dns.mode=none ipv6.address=none
+  if ! incus network show "$NET" >/dev/null 2>&1; then
+    # Dedicated bridge; Incus firewalling OFF (our nftables own egress), nat=false
+    # (Squid originates on the host, so the guest needs no NAT — a forward-chain
+    # hole isn't real egress), dns.mode=none (no auto instance DNS records; the
+    # DNS *content* comes from raw.dnsmasq, set just below).
+    # VERIFY subnet matches DEVVM_SUBNET in host-egress.sh (10.63.0.0/24).
+    incus network create "$NET" \
+      ipv4.address=10.63.0.1/24 ipv4.nat=false ipv4.firewall=false \
+      dns.mode=none ipv6.address=none
+  fi
+  # Make Incus's own dnsmasq allowlist-only, every run (so the list can't drift).
+  local raw; raw="$(build_raw_dnsmasq)" || { echo "DNS allowlist build failed" >&2; return 1; }
+  incus network set "$NET" raw.dnsmasq "$raw"
 }
 
 create_if_absent() {
@@ -78,7 +100,7 @@ clone_repo() {
   echo "Cloning into the guest ..."
   # repo/dir passed as positional args ($1/$2), never spliced into the string.
   incus exec "$name" -- bash -lc 'install -d /root/workspace && git clone -- "$1" "$2"' _ "$repo" "$dir" \
-    || echo "clone failed (private repo? set GH_TOKEN before 'devvm up')" >&2
+    || { echo "clone failed (private repo? set GH_TOKEN before 'devvm up')" >&2; return 1; }
 }
 
 wait_agent() {

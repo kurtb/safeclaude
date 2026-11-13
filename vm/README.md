@@ -37,9 +37,12 @@ others don't:
    / HTTP Host, no decryption, no MITM CA. Allowlist is **domain names**.
 3. **`input` chain** — the guest can reach only DHCP/DNS/Squid on the bridge IP,
    nothing else on the host (sshd, Incus API, …).
-4. **Allowlist-only DNS (dnsmasq)** — resolves only allowlisted domains, else
-   NXDOMAIN; no default upstream → DNS can't tunnel. Needs `dns.mode=none` on the
-   Incus network (driver sets it) so it doesn't collide with Incus's dnsmasq.
+4. **Allowlist-only DNS (Incus's own dnsmasq)** — resolves only allowlisted
+   domains, else NXDOMAIN; `no-resolv` means no default upstream → DNS can't
+   tunnel to arbitrary names. Incus's managed-bridge dnsmasq owns `:53` and does
+   DHCP, so the driver makes *it* allowlist-only via the network's `raw.dnsmasq`
+   (one `server=/<domain>/<upstream>` per allowlisted host) instead of running a
+   second, competing dnsmasq.
 5. **`forward` default-deny** on the VM subnet — only the DNATed proxy paths
    survive; all other direct egress dropped.
 
@@ -79,14 +82,15 @@ finish:
 0. `sudo ./install-host.sh` — installs the egress enforcement root-owned to
    `/usr/local/lib/devvm` (the driver runs that copy, never the checkout).
 1. Install **`squid-openssl`** (stock `squid` is GnuTLS and lacks `ssl-bump`) +
-   `dnsmasq` (dedicated instance) + Incus (`incus admin init`). For reboot
-   persistence, add a systemd unit running the egress script before
-   `incus.service`.
+   Incus (`incus admin init`). Incus pulls in `dnsmasq-base` and runs its own
+   dnsmasq on the managed bridge. For reboot persistence, add a systemd unit
+   running the egress script before `incus.service`.
 2. Generate the Squid splice cert (command in `proxy/squid.conf`); confirm the
    `conf.d` include lands before the default `http_access`.
-3. Confirm `devvmbr0` subnet matches `DEVVM_SUBNET`; confirm the allowlist-only
-   dnsmasq runs as a dedicated instance (with `dns.mode=none`) and the guest
-   still gets DHCP + gateway.
+3. Confirm `devvmbr0` subnet matches `DEVVM_SUBNET`; confirm the driver's
+   `raw.dnsmasq` makes Incus's dnsmasq allowlist-only (allowlisted name resolves,
+   a non-allowlisted one returns NXDOMAIN) while the guest still gets DHCP +
+   gateway from that same dnsmasq.
 4. Host nested virt on (`kvm_intel/amd nested=1`) for minikube `kvm2`.
 5. `cd` into a project, `devvm` — verify boot + clone, then the egress smoke test
    from inside: `curl https://example.com` FAILS, `curl https://api.github.com/zen`

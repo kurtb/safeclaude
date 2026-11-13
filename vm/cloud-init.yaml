@@ -15,7 +15,7 @@ runcmd:
   # Claude Code — substrate-agnostic; same installer as the container image.
   # NOTE: `|| true` means a failed install is non-fatal to first boot (re-runs
   # pick it up); check `claude --version` after boot.
-  - [ bash, -lc, "curl -fsSL https://downloads.claude.ai/install.sh | bash || true" ]
+  - [ bash, -lc, "curl -fsSL https://claude.ai/install.sh | bash || true" ]
   - [ bash, -lc, "install -d -m 0755 /root/workspace" ]
   # VS Code Remote-SSH attaches here; sshd is already in the cloud image.
 # TODO: port the rest of the Dockerfile toolchain (node/fnm, bun, codex, gstack,

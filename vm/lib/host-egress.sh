@@ -9,7 +9,9 @@
 #      and host SSRF to 169.254.169.254 / RFC1918).
 #   2. Squid SNI/Host allowlist — only allowlisted domains spliced through.
 #   3. input chain — guest can't reach host services beyond DNS/DHCP/Squid.
-#   4. dedicated allowlist-only dnsmasq — non-allowlisted names NXDOMAIN.
+#   4. allowlist-only DNS — Incus's own dnsmasq, made allowlist-only by the
+#      driver via the network's raw.dnsmasq (no-resolv + per-domain upstream);
+#      non-allowlisted names get no upstream => NXDOMAIN.
 # Residual exfil (shared-CDN fronting, subdomain DNS) is documented in README as
 # accepted (same posture as the container).
 #
@@ -53,28 +55,15 @@ install -d /etc/squid/conf.d
 sed "s/@PROXY_IP@/$PROXY_IP/g" "$SQUIDCONF" > /etc/squid/conf.d/devvm.conf
 systemctl reload squid 2>/dev/null || systemctl restart squid
 
-# 2) DEDICATED allowlist-only dnsmasq (does NOT touch the host's own dnsmasq).
-#    Needs dns.mode=none on the Incus net (driver sets it). NOTE: server=/d/
-#    forwards all subdomains of d — a slow DNS tunnel under an allowlisted zone
-#    is still possible (documented).
-dconf=/run/devvm-dnsmasq.conf
-{
-  echo "no-resolv"; echo "bind-interfaces"
-  echo "interface=$NET"; echo "listen-address=$PROXY_IP"; echo "except-interface=lo"
-  echo "pid-file=/run/devvm-dnsmasq.pid"
-  while IFS= read -r d; do [ -n "$d" ] && echo "server=/$d/1.1.1.1"; done <<< "$domains"
-} > "$dconf"
-# Stop a prior dedicated instance, verifying the PID is really our dnsmasq (not a
-# recycled PID), and wait for it to exit before rebinding :53. VERIFY: a systemd
-# unit is the right prod answer; this is the scaffold stop-gap.
-if [ -f /run/devvm-dnsmasq.pid ]; then
-  oldpid="$(cat /run/devvm-dnsmasq.pid 2>/dev/null || true)"
-  if [ -n "$oldpid" ] && [ "$(cat "/proc/$oldpid/comm" 2>/dev/null || true)" = dnsmasq ]; then
-    kill "$oldpid" 2>/dev/null || true
-    for _ in $(seq 1 30); do [ -d "/proc/$oldpid" ] || break; sleep 0.1; done
-  fi
-fi
-dnsmasq --conf-file="$dconf"
+# 2) DNS is served by Incus's OWN dnsmasq (it owns :53 on the bridge and does
+#    DHCP), made allowlist-only by the driver via the network's raw.dnsmasq
+#    (no-resolv + one server=/<domain>/<upstream> per allowlisted host). We do
+#    NOT run a second dnsmasq here: it could never bind the already-owned port
+#    (confirmed on a live host), and dropping it also removes the start-race the
+#    old design carried. The nft input chain below still admits the guest's :53
+#    queries to the bridge IP so they reach Incus's dnsmasq. NOTE: server=/d/
+#    forwards every subdomain of d — a slow DNS tunnel under an allowlisted zone
+#    remains possible (documented, accepted).
 
 # 3) nftables — ONE atomic transaction (add-before-delete; never leaves the
 #    table gone / fails open). Empty allowed4 => empty set => all egress dropped
