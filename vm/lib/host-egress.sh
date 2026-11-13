@@ -41,7 +41,10 @@ domains="$(grep -vE '^\s*#|^\s*$' "$CONF" | sed 's/^cidr://' | sort -u)"
 # (review: a silent empty set bricks the VM with no diagnostic). Fail loud and
 # keep the existing rules rather than applying an empty (deny-all) set.
 rtmp="$(mktemp)"; trap 'rm -f "$rtmp"' EXIT
-"$RESOLVE" > "$rtmp" || { echo "FATAL: allowlist resolver failed; keeping existing egress rules" >&2; exit 1; }
+# Pass CONF explicitly: the resolver's own default ($HERE/../allowlist.conf) is
+# wrong in the installed layout (/usr/local/lib/allowlist.conf doesn't exist),
+# right only in the checkout. CONF here is the installed root-owned copy.
+"$RESOLVE" "$CONF" > "$rtmp" || { echo "FATAL: allowlist resolver failed; keeping existing egress rules" >&2; exit 1; }
 mapfile -t allowed4 < <(grep -v ':' "$rtmp" || true)
 elems="$(printf '%s\n' "${allowed4[@]:-}" | sed '/^$/d' | paste -sd, -)"
 [ -n "$elems" ] || { echo "FATAL: resolved allowlist is empty; refusing to apply (would cut all VM egress). Check DNS/network." >&2; exit 1; }
