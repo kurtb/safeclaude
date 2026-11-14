@@ -5,7 +5,8 @@
 #
 # Strongest of the OS drivers. No host filesystem is mounted (clone-only), and
 # all egress is enforced host-side where guest-root can't reach it. Edit the
-# in-VM clone via VS Code Remote-SSH.
+# in-VM clone via `devvm shell`/`incus exec` (VS Code Remote-SSH is a planned
+# follow-up; the cloud image ships no sshd/host key yet).
 #
 # Verbs (from ../devvm.sh):  ensure <name> <repo> <vmdir> | shell | stop | rm
 #

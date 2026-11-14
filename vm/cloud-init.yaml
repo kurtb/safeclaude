@@ -17,7 +17,8 @@ runcmd:
   # pick it up); check `claude --version` after boot.
   - [ bash, -lc, "curl -fsSL https://claude.ai/install.sh | bash || true" ]
   - [ bash, -lc, "install -d -m 0755 /root/workspace" ]
-  # VS Code Remote-SSH attaches here; sshd is already in the cloud image.
+  # Edit the clone from the host via `incus exec`/`incus file`. (VS Code
+  # Remote-SSH is a planned follow-up: the cloud image ships no sshd or host key.)
 # TODO: port the rest of the Dockerfile toolchain (node/fnm, bun, codex, gstack,
 # yolo-* wrappers, safeclaude-doctor) and pin versions; share steps with the
 # Dockerfile so the VM and image toolchains don't drift.

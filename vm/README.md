@@ -47,8 +47,9 @@ others don't:
    survive; all other direct egress dropped.
 
 Clone-only: `devvm` reads the current folder's git remote and the guest clones it
-into `/root/workspace`; nothing is mounted from the host. Edit via **VS Code
-Remote-SSH**. Private repos: `export GH_TOKEN=…` before `devvm up`.
+into `/root/workspace`; nothing is mounted from the host. Edit the clone in-guest with `devvm shell` / `incus exec` (or move files with
+`incus file`). *(VS Code Remote-SSH is a planned follow-up — the cloud image
+ships no SSH server or host key yet.)* Private repos: `export GH_TOKEN=…` before `devvm up`.
 
 ## Known limitations (accepted — same posture as the container)
 

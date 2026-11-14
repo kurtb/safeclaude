@@ -24,9 +24,9 @@ _DEVVM_HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 _devvm_sanitize() {
   local s="$1" h="$2"
   s="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
-  s="${s:0:48}"; s="${s%-}"
-  [[ "$s" =~ ^[a-z] ]] || s="vm-$s"
-  s="${s%-}"; [ -n "$s" ] || s="vm"
+  [[ "$s" =~ ^[a-z] ]] || s="vm-$s"   # leading letter FIRST (digit-prefixed names)
+  s="${s:0:48}"; s="${s%-}"           # cap AFTER, so the "vm-" prefix can't push past 63
+  [ -n "$s" ] || s="vm"
   printf 'devvm-%s-%s' "$s" "$h"       # 6 + <=48 + 1 + 6 = <=61 <= 63
 }
 
