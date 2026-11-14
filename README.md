@@ -219,6 +219,26 @@ dotclaude/
 
 Egress to anything else is rejected.
 
+### How the allowlist tracks rotating IPs
+
+The firewall matches on destination **IP**, but CDN- and registry-fronted hosts
+(`*.jfrog.io`, Azure Front Door, cloud blob stores) rotate their IPs faster than
+a boot-time `dig` snapshot can track. So the container runs a local **dnsmasq**
+as its resolver, configured with `ipset=/<domain>/allowed-domains`: every time an
+allowlisted name (or any subdomain of it) is looked up, dnsmasq inserts the
+answer IPs into the same `allowed-domains` ipset the firewall permits. Resolution
+happens *before* the connection, so a freshly-rotated IP is allowed the moment
+the client resolves it — no stale snapshot, and no need to widen a host to a
+whole `/24`. Both the ipset rules and the firewall's allowlist are generated from
+one list in `init-firewall.sh`, so they can't drift apart.
+
+Because dnsmasq matches by domain **suffix**, a single entry like `jfrog.io` also
+covers `*.jfrog.io`, including blob/download subdomains under the same zone. A
+blob host on a *different* zone (e.g. a CloudFront distribution) still needs its
+own allowlist entry. This is the same name-breadth tradeoff as any domain
+allowlist — it tracks rotation, it does not stop exfil through an
+already-allowlisted service.
+
 ### Adding your own domains
 
 Keep a personal allowlist that persists across rebuilds:

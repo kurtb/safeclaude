@@ -28,7 +28,7 @@ RUN apt-get update \
     tmux \
     tree htop lsof file \
     build-essential \
-    iptables ipset iproute2 dnsutils aggregate \
+    iptables ipset iproute2 dnsutils aggregate dnsmasq-base \
     python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python${PYTHON_VERSION}-dev python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
