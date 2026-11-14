@@ -17,11 +17,19 @@ install -o root -g root -m 0644 "$SRC/proxy/squid.conf"          "$DEST/squid.co
 
 # Squid splice cert (never presented to clients on a splice; required by the
 # ssl-bump port). Generate once so the first `devvm up` doesn't fail on reload.
+# NOTE: key and cert MUST be written to separate files then concatenated — a
+# single `-keyout X -out X` truncates X twice and leaves only one PEM block, so
+# Squid FATALs the HTTPS port with "missing certificate". The guard also
+# regenerates when the existing file has no valid certificate, so a previously
+# broken pem self-heals on the next run instead of being kept.
 cert=/etc/squid/devvm-proxy.pem
-if [ ! -s "$cert" ]; then
+if [ ! -s "$cert" ] || ! openssl x509 -in "$cert" -noout >/dev/null 2>&1; then
   install -d -m 0755 /etc/squid
+  k="$(mktemp)"; c="$(mktemp)"
   openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-    -keyout "$cert" -out "$cert" -subj "/CN=devvm-proxy" >/dev/null 2>&1
+    -keyout "$k" -out "$c" -subj "/CN=devvm-proxy" >/dev/null 2>&1
+  cat "$c" "$k" > "$cert"           # cert + key in one file (squid tls-cert= wants both)
+  rm -f "$k" "$c"
   chmod 600 "$cert"
   echo "Generated Squid splice cert at $cert"
 fi
