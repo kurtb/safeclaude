@@ -6,8 +6,8 @@ Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) i
 > or a hard (separate-kernel) isolation boundary, `devvm` boots a per-project VM
 > with a host-enforced, default-deny egress allowlist — Incus on Linux, with
 > macOS/WSL2 drivers planned. It's a complementary lane, not a replacement for
-> the container. See [`vm/README.md`](vm/README.md). Status: scaffold, not yet
-> validated on a live Incus host.
+> the container. See [`vm/README.md`](vm/README.md). Status: experimental; the
+> Linux/Incus egress boundary is validated live (see its known limitations).
 
 ## What's included
 

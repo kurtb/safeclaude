@@ -2,9 +2,10 @@
 # Resolve the shared allowlist (allowlist.conf) + dynamic sources into a
 # deduped, SSRF-filtered list of CIDRs, one per line, on stdout.
 #
-# Used for the IP-level egress ACL (defense in depth). Domain-level egress is
-# enforced by the SNI proxy from allowlist.conf directly, so CDN rotation is
-# handled there, not here.
+# Used for the IP-level egress ACL (the nft dest-IP pin). Domain-level egress is
+# enforced by the SNI proxy from allowlist.conf directly. This output is a
+# resolve-time SNAPSHOT: a CDN-fronted host that rotates to an IP outside it is
+# dropped until the next `devvm up` re-resolves (fails closed; see README).
 #
 # SECURITY: every resolved address is passed through drop_bogons() first, so a
 # repointed/poisoned allowlisted domain (or one carrying an internal record)

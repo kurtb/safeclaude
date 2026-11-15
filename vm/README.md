@@ -2,7 +2,7 @@
 
 The VM lane that complements the container: a real-kernel VM with native
 Docker/minikube and a **host-enforced, default-deny egress allowlist**. One VM
-per project (`devvm-<basename>`), walk-up-and-boot, **clone-only** (no host
+per project (`devvm-<basename>-<hash>`), walk-up-and-boot, **clone-only** (no host
 filesystem mounted into the guest).
 
 ## Why not one tool everywhere

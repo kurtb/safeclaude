@@ -2,12 +2,13 @@
 # devvm — platform-neutral per-project dev VM.
 #
 # Walk up to a folder, boot an isolated VM, enforce a default-deny egress
-# allowlist (host-side), shell in. One VM per project, named devvm-<basename>.
-# Substrate is per-OS (drivers/); UX, guest image, and allowlist are shared.
+# allowlist (host-side), shell in. One VM per project, named
+# devvm-<basename>-<hash>. Substrate is per-OS (drivers/); UX, guest image, and
+# allowlist are shared.
 #
 # CLONE-ONLY model: no host filesystem is mounted into the VM. devvm reads the
-# current folder's git remote and the guest clones it; edit in-VM via VS Code
-# Remote-SSH. (Keeps the host unreachable from a guest-root agent.)
+# current folder's git remote and the guest clones it; edit in-VM via
+# `devvm shell`. (Keeps the host unreachable from a guest-root agent.)
 #
 #   source ~/.../vm/devvm.sh   # safe to source: no top-level `set -e`
 #   devvm [up|shell|stop|rm] [--name X]

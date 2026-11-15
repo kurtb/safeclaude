@@ -4,7 +4,8 @@ Stand up one project VM with host-enforced egress, verify the boundary, then run
 Claude inside it. Runs on a **Linux host with KVM** (not inside a container).
 Each step says *what* and *why*; run them yourself and read the output.
 
-> Status: experimental, not merged. Use the `sketch/incus-vm-lane` branch.
+> Status: experimental. Read the known limitations in [`README.md`](README.md)
+> before relying on it.
 
 ## Phase 0 — host prerequisites (one-time)
 
@@ -25,13 +26,13 @@ sudo incus admin init --minimal                 # accept the minimal defaults
 # 0c. Let your user drive Incus without sudo.
 sudo usermod -aG incus-admin "$USER"            # log out/in (or: newgrp incus-admin)
 
-# 0d. Get the code (the branch, not main — this isn't merged).
+# 0d. Get the code.
 git clone https://github.com/kurtb/safeclaude.git
-cd safeclaude && git checkout sketch/incus-vm-lane
+cd safeclaude
 ```
 
 Why: Incus is the VM manager; Squid/dnsmasq/nftables are the host-side egress
-gates; the branch carries the `vm/` tooling.
+gates; `vm/` carries the tooling.
 
 ## Phase 1 — install the egress enforcement root-owned (one-time)
 
@@ -91,9 +92,9 @@ claude                                 # start it; --dangerously-skip-permission
                                        # safe here — egress is capped and the host FS isn't mounted
 ```
 
-Edit with a real editor via **VS Code Remote-SSH**: `incus list` for the VM's
-IP, add it to `~/.ssh/config`, then "Remote-SSH: Connect to Host" in VS Code and
-open `/root/workspace/<repo>`.
+Edit the clone in-guest (`devvm shell` / `incus exec`), or move files with
+`incus file`. VS Code Remote-SSH is a planned follow-up — the cloud image ships
+no SSH server or host key yet.
 
 ## Teardown
 

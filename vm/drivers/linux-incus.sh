@@ -10,8 +10,8 @@
 #
 # Verbs (from ../devvm.sh):  ensure <name> <repo> <vmdir> | shell | stop | rm
 #
-# STATUS: structurally complete; validate on a real Incus 7.0 + KVM host (no
-# virt on the build box). Spots needing a live check are marked VERIFY.
+# STATUS: validated live on ARM Incus 7.5.1 + KVM (create, boot, clone, egress
+# smoke test). Spots still needing a live check are marked VERIFY.
 set -euo pipefail
 verb="${1:?}"; name="${2:?}"; repo="${3:-}"; VMDIR="${4:?}"
 IMAGE="images:ubuntu/24.04/cloud"
