@@ -75,6 +75,15 @@ claimed solved:
   routed egress but not intra-bridge L2, so VMs on the bridge can reach each
   other's services. Fix in progress: a per-project bridge (VEC-230). Until then,
   treat concurrently-running project VMs as mutually reachable.
+- **Stock Squid `:3128` reachable from localhost.** devvm installs its SNI filter
+  as a conf.d drop-in and does not modify Debian's stock `squid.conf`, which keeps
+  its own `:3128` explicit proxy. That port is reachable **from the host's loopback
+  only** (stock `allow localhost`; `allow localnet` is commented out) and the nft
+  `input` chain blocks the guest from it — so it is **not** an egress path for the
+  guest or the LAN. A host-local process could use it to reach non-allowlisted
+  hosts, but host processes already have unrestricted egress (the nft rules clamp
+  only the guest subnet), so it grants no reach they lack. Closed in a follow-up
+  that runs devvm's Squid as a **dedicated instance** and retires the stock :3128.
 - **`GH_TOKEN`** is persisted inside a guest-root VM — use a fine-grained,
   read-only, repo-scoped token.
 
@@ -97,8 +106,11 @@ Two never-run host-path bugs were found and fixed getting there: the splice cert
 was generated with `-keyout X -out X` (one file, truncated twice → missing cert →
 ssl-bump port FATAL), and the intercepted TLS `CONNECT` was denied by a
 `dstdomain` ACL that can't match the dest IP (fixed by allowing the CONNECT
-through to `ssl_bump`, scoped to the intercept listener so the stock `:3128`
-can't become an open proxy).
+through to `ssl_bump`, scoped to our intercept listener with **`myportname`** —
+`localport` is unreliable on intercept ports, where Squid reports the original
+destination port, not the port it listens on). Scoping removes the *global*
+CONNECT allow; the stock Debian `:3128` explicit proxy still exists but is
+reachable from localhost only (see Known limitations), retired in a follow-up.
 
 ### Host setup (prerequisites)
 

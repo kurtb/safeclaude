@@ -49,11 +49,18 @@ mapfile -t allowed4 < <(grep -v ':' "$rtmp" || true)
 elems="$(printf '%s\n' "${allowed4[@]:-}" | sed '/^$/d' | paste -sd, -)"
 [ -n "$elems" ] || { echo "FATAL: resolved allowlist is empty; refusing to apply (would cut all VM egress). Check DNS/network." >&2; exit 1; }
 
-# 1) Squid allowlist + config.
+# 1) Squid allowlist + config, installed as a conf.d DROP-IN. We do NOT modify
+#    Debian's stock /etc/squid/squid.conf. NOTE: the stock config keeps its own
+#    :3128 explicit proxy, reachable FROM LOCALHOST ONLY (stock `allow localhost`;
+#    `allow localnet` is commented, and the nft input chain below blocks the guest
+#    from :3128). That residual localhost-only open proxy grants nothing to the
+#    guest or LAN; it is documented (README known-limitations) and closed in a
+#    follow-up that runs devvm's Squid as a dedicated instance and retires the
+#    stock :3128. The drop-in adds our myportname-scoped intercept ports + splice.
 install -d /etc/squid
 printf '%s\n' "$domains" > /etc/squid/devvm-allowed-domains
 # Template the bind IP in (squid.conf ships a @PROXY_IP@ placeholder so DEVVM_*
-# overrides don't silently desync it). VERIFY conf.d include order; needs squid-openssl.
+# overrides don't silently desync it). Needs squid-openssl.
 install -d /etc/squid/conf.d
 sed "s/@PROXY_IP@/$PROXY_IP/g" "$SQUIDCONF" > /etc/squid/conf.d/devvm.conf
 systemctl reload squid 2>/dev/null || systemctl restart squid
