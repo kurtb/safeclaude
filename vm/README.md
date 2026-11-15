@@ -66,38 +66,56 @@ claimed solved:
 - **General-purpose allowlisted hosts** (`github.com`, `sentry.io`,
   `statsig.com`, gists/raw) are usable as exfil channels by a hostile agent.
 - **CDN drift vs. the dest-IP pin.** The pin is a `dig` snapshot; CDN-fronted
-  hosts can rotate to IPs not in the set and get dropped intermittently.
+  hosts (e.g. `*.jfrog.io`) can rotate to IPs not in the set and get dropped
+  intermittently. Fails *closed* (blocks, never leaks). Fix in progress:
+  re-resolve the allowlisted name in the proxy per connection so rotation is
+  tracked live (VEC-231).
+- **Cross-project network isolation.** All project VMs currently share one
+  bridge (`devvmbr0`) with Incus firewalling off; the nft `forward` chain filters
+  routed egress but not intra-bridge L2, so VMs on the bridge can reach each
+  other's services. Fix in progress: a per-project bridge (VEC-230). Until then,
+  treat concurrently-running project VMs as mutually reachable.
 - **`GH_TOKEN`** is persisted inside a guest-root VM — use a fine-grained,
   read-only, repo-scoped token.
 
 This is the same boundary the container accepts: it stops *accidental* and
 *broad* egress, not a determined exfil via an allowlisted service.
 
-## Finish / validate on a real Incus host (VERIFY markers inline)
+## Validation status — egress boundary proven live
 
-No KVM/Incus on the build box, so the host-egress + driver paths are unrun and
-unverified. What's been checked on the build box: the SSRF filter
-(`resolve-allowlist.sh`) and the CLI parsing/sanitization (`devvm.sh`). To
-finish:
+Validated on a real **ARM Incus 7.5.1 + KVM** host. The in-guest egress smoke
+test passes end to end:
+
+- **Allowed:** `curl https://api.github.com/zen` → succeeds; Squid splices
+  (access.log `TCP_TUNNEL`, guest sees GitHub's real cert, `verify ok`).
+- **Denied:** `curl https://example.com` → `Could not resolve host` (allowlist-only
+  DNS NXDOMAIN).
+- **Bypass:** `curl --resolve api.github.com:443:1.2.3.4 https://api.github.com` →
+  `Failed to connect` (the nft dest-IP pin defeats the SNI-spoof).
+
+Two never-run host-path bugs were found and fixed getting there: the splice cert
+was generated with `-keyout X -out X` (one file, truncated twice → missing cert →
+ssl-bump port FATAL), and the intercepted TLS `CONNECT` was denied by a
+`dstdomain` ACL that can't match the dest IP (fixed by allowing the CONNECT
+through to `ssl_bump`, scoped to the intercept listener so the stock `:3128`
+can't become an open proxy).
+
+### Host setup (prerequisites)
 
 0. `sudo ./install-host.sh` — installs the egress enforcement root-owned to
-   `/usr/local/lib/devvm` (the driver runs that copy, never the checkout).
+   `/usr/local/lib/devvm` (the driver runs that copy, never the checkout) and
+   generates the Squid splice cert.
 1. Install **`squid-openssl`** (stock `squid` is GnuTLS and lacks `ssl-bump`) +
    Incus (`incus admin init`). Incus pulls in `dnsmasq-base` and runs its own
    dnsmasq on the managed bridge. For reboot persistence, add a systemd unit
    running the egress script before `incus.service`.
-2. Generate the Squid splice cert (command in `proxy/squid.conf`); confirm the
-   `conf.d` include lands before the default `http_access`.
-3. Confirm `devvmbr0` subnet matches `DEVVM_SUBNET`; confirm the driver's
-   `raw.dnsmasq` makes Incus's dnsmasq allowlist-only (allowlisted name resolves,
-   a non-allowlisted one returns NXDOMAIN) while the guest still gets DHCP +
-   gateway from that same dnsmasq.
-4. Host nested virt on (`kvm_intel/amd nested=1`) for minikube `kvm2`.
-5. `cd` into a project, `devvm` — verify boot + clone, then the egress smoke test
-   from inside: `curl https://example.com` FAILS, `curl https://api.github.com/zen`
-   SUCCEEDS, and the bypass `curl --resolve api.github.com:443:1.2.3.4 https://api.github.com`
-   is BLOCKED.
-6. `minikube start --driver=docker` inside the guest.
+2. Ensure your shell is in the `incus-admin` group (`newgrp incus-admin` or
+   re-login) so `devvm` can talk to the Incus socket.
+
+### Still to verify (non-egress)
+
+- Host nested virt on (`kvm_intel/amd nested=1`) for minikube `kvm2`, then
+  `minikube start --driver=docker` inside the guest.
 
 ## Allowlist / posture
 

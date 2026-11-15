@@ -15,8 +15,8 @@
 # Residual exfil (shared-CDN fronting, subdomain DNS) is documented in README as
 # accepted (same posture as the container).
 #
-# STATUS: designed, NOT run (no Incus/KVM on the build box). VERIFY markers flag
-# spots needing a live check.
+# STATUS: validated live on ARM Incus 7.5.1 + KVM (allowed/denied/--resolve-bypass
+# smoke test passes). Remaining VERIFY markers are non-egress (subnet match).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NET="${DEVVM_NET:-devvmbr0}"
