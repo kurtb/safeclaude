@@ -35,6 +35,7 @@ if [ ! -s "$cert" ] || ! openssl x509 -in "$cert" -noout >/dev/null 2>&1; then
 fi
 
 echo "Installed to $DEST (root-owned). The driver runs $DEST/host-egress.sh via sudo."
-echo "Requires: squid-openssl (stock squid lacks ssl-bump) + dnsmasq + openssl."
+echo "Requires: squid-openssl (stock squid lacks ssl-bump) + openssl. DNS is served by"
+echo "Incus's own dnsmasq (dnsmasq-base) — do NOT install the full dnsmasq service."
 echo "For reboot persistence, enable a systemd unit that runs it before incus.service"
 echo "(or set boot.autostart=false on instances — the driver already does)."
