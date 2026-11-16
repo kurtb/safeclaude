@@ -36,7 +36,7 @@ others don't:
 2. **SNI/Host allowlist (Squid peek-and-splice)** — allowlists HTTPS by TLS SNI
    / HTTP Host, no decryption, no MITM CA. Allowlist is **domain names**.
 3. **`input` chain** — the guest can reach only DHCP/DNS/Squid on the bridge IP,
-   nothing else on the host (sshd, Incus API, …).
+   nothing else on the host (sshd, Incus API, resolvers on other host addresses, …).
 4. **Allowlist-only DNS (Incus's own dnsmasq)** — resolves only allowlisted
    domains, else NXDOMAIN; `no-resolv` means no default upstream → DNS can't
    tunnel to arbitrary names. Incus's managed-bridge dnsmasq owns `:53` and does
@@ -67,7 +67,8 @@ claimed solved:
   `statsig.com`, gists/raw) are usable as exfil channels by a hostile agent.
 - **CDN drift vs. the dest-IP pin.** The pin is a `dig` snapshot; CDN-fronted
   hosts (e.g. `*.jfrog.io`) can rotate to IPs not in the set and get dropped
-  intermittently. Fails *closed* (blocks, never leaks). Fix in progress:
+  intermittently. Fails *closed* (blocks, never leaks). Workaround: re-run
+  `devvm up`, which re-resolves the allowlist. Fix in progress:
   re-resolve the allowlisted name in the proxy per connection so rotation is
   tracked live (VEC-231).
 - **Cross-project network isolation.** All project VMs currently share one

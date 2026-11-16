@@ -95,8 +95,15 @@ $set_line
     type filter hook input priority filter; policy accept;
     iifname != "$NET" accept
     ct state established,related accept
-    iifname "$NET" udp dport { 53, 67 } accept
-    iifname "$NET" tcp dport { 53, $SQUID_HTTP, $SQUID_HTTPS } accept
+    # DNS + proxy are pinned to the bridge IP: the input hook sees traffic to ANY
+    # host-local address, so an unpinned accept would also let the guest query a
+    # resolver bound to another host address (e.g. the default incusbr0 dnsmasq,
+    # which forwards every name — an unrestricted DNS path around gate 4). DNATed
+    # proxy traffic already carries daddr $PROXY_IP by the time it reaches input.
+    # DHCP stays unpinned (DISCOVER/REQUEST are broadcast).
+    iifname "$NET" udp dport 67 accept
+    iifname "$NET" ip daddr $PROXY_IP udp dport 53 accept
+    iifname "$NET" ip daddr $PROXY_IP tcp dport { 53, $SQUID_HTTP, $SQUID_HTTPS } accept
     iifname "$NET" drop
   }
   chain forward {
