@@ -51,18 +51,26 @@ nothing a repo-writer (or an agent) changes can run as root.
 source ./vm/devvm.sh           # provides the `devvm` function (safe to source)
 cd ~/path/to/your-project      # a git repo; a public https origin is cloned inside
 devvm                          # create network+VM (first run), apply egress, boot, shell in (bare VM, root)
-# exit that shell, then:
-devvm setup                    # install git/gh/Docker/Claude Code + create the `dev` user (re-runnable)
-devvm shell                    # back in, now as `dev`
 ```
 
 What happens, in order: create `devvmbr0` (Incus firewall off, NAT off, DNS
 off — we own all three) → `incus init` the VM stopped → `sudo` the host egress
 (dest-IP pin + SNI proxy + allowlist DNS + default-deny) → start → root shell in
-a **bare** VM. Nothing is installed at boot. `devvm setup` then runs
-`vm/guest-setup.sh` inside the VM in the foreground, so you see every step and
-any failure; it is safe to re-run. Once it has run, `devvm` also clones a public
-https origin into `/home/dev/workspace/<repo>` and `devvm shell` logs in as `dev`.
+a **bare** VM. Nothing is installed at boot.
+
+Set the VM up by hand, in that root shell:
+
+```bash
+apt-get update && apt-get install -y git      # skip if git is already there
+git clone https://github.com/kurtb/safeclaude.git
+bash safeclaude/vm/guest-setup.sh             # git, gh, Docker, Claude Code + the `dev` user
+exit
+```
+
+The script runs in the foreground, so you see every step and any failure, and it
+is safe to re-run. Back on the host, `devvm shell` now logs you in as `dev`, and
+later `devvm` runs also clone a public https origin into
+`/home/dev/workspace/<repo>`.
 
 ## Phase 3 — verify the boundary (do this before trusting it)
 
@@ -90,7 +98,7 @@ Treat the VM as a fresh dev machine. `devvm` never handles your credentials — 
 log in inside the VM, as the `dev` user, with what *that VM* should hold:
 
 ```bash
-claude --version                       # installed by `devvm setup`
+claude --version                       # installed by guest-setup.sh
 gh auth login --with-token             # paste a fine-grained token scoped to this
                                        # VM's repos (read-only unless the agent
                                        # should push), then Ctrl-D

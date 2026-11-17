@@ -14,13 +14,13 @@ that can be shared.
 | Shared (all OS) | Per-OS driver |
 |---|---|
 | `allowlist.conf` — egress allowlist (domain names) | `drivers/linux-incus.sh` (implemented) |
-| `guest-setup.sh` — guest setup, run on demand (`devvm setup`) | `drivers/darwin-lima.sh` (stub) |
+| `guest-setup.sh` — guest setup, run by hand inside the VM | `drivers/darwin-lima.sh` (stub) |
 | `lib/resolve-allowlist.sh` — domains → SSRF-filtered CIDRs | `drivers/windows-wsl2.sh` (stub) |
 | `lib/host-egress.sh` + `proxy/squid.conf` — dest-IP pin + SNI proxy + DNS + nftables | |
 | `devvm.sh` — CLI + OS detection/dispatch | |
 
 ```
-devvm [up|shell|setup|stop|rm] [--name X]
+devvm [up|shell|stop|rm] [--name X]
 ```
 
 ## Boundary model (Linux driver)
@@ -53,8 +53,9 @@ Remote-SSH is a planned follow-up — the cloud image ships no SSH server or hos
 key yet.)*
 
 **The guest is a fresh dev machine.** A new VM boots **bare** — nothing is
-installed at boot, and `devvm` drops you into a root shell. `devvm setup` pushes
-[`guest-setup.sh`](guest-setup.sh) into the VM and runs it in the foreground: it
+installed at boot, and `devvm` drops you into a root shell. You set it up by
+hand: clone this repo inside the VM and run [`guest-setup.sh`](guest-setup.sh)
+as root (see [`QUICKSTART.md`](QUICKSTART.md)). It runs in the foreground and
 installs only what every project needs (git, `gh`, Docker, Claude Code) and
 creates the unprivileged **`dev`** user (in the `docker` group, with passwordless
 `sudo`). It is idempotent, so re-run it if a step fails. After that `devvm shell`

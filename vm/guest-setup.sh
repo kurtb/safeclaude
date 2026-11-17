@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Guest setup for a devvm VM — run INSIDE the VM, as root. `devvm setup` pushes
-# this file in and runs it; you can also run it by hand.
+# Guest setup for a devvm VM — run by hand INSIDE the VM, as root:
+#
+#   apt-get update && apt-get install -y git
+#   git clone https://github.com/kurtb/safeclaude.git
+#   bash safeclaude/vm/guest-setup.sh
 #
 # A new VM is a bare Ubuntu machine: nothing is installed at boot. This script
 # installs only what every project needs (git, gh, Docker, Claude Code) and
@@ -65,4 +68,4 @@ fi
 step "Done"
 echo "docker: $(docker --version)"
 echo "claude: $(su - dev -c 'claude --version' 2>&1 | tail -1)"
-echo "Next, as dev (devvm shell):  gh auth login --with-token && gh auth setup-git ; claude login"
+echo "Next: exit, re-enter with 'devvm shell' (now logs in as dev), then:  gh auth login --with-token && gh auth setup-git ; claude login"

@@ -11,7 +11,7 @@
 # `devvm shell`. (Keeps the host unreachable from a guest-root agent.)
 #
 #   source ~/.../vm/devvm.sh   # safe to source: no top-level `set -e`
-#   devvm [up|shell|setup|stop|rm] [--name X]
+#   devvm [up|shell|stop|rm] [--name X]
 #
 # NOTE: no `set -euo pipefail` at file scope — that would kill an interactive
 # shell when sourced. It's scoped to the run subshell inside devvm() instead.
@@ -48,12 +48,12 @@ _devvm_name() {
   _devvm_sanitize "$slug" "$(_devvm_hash "$ident")"
 }
 
-# Verb = first up|shell|setup|stop|rm token, skipping --name <value>; default up.
+# Verb = first up|shell|stop|rm token, skipping --name <value>; default up.
 _devvm_verb() {
   local a v="up" skip=0
   for a in "$@"; do
     if [ "$skip" = 1 ]; then skip=0; continue; fi
-    case "$a" in --name) skip=1 ;; up|shell|setup|stop|rm) v="$a"; break ;; esac
+    case "$a" in --name) skip=1 ;; up|shell|stop|rm) v="$a"; break ;; esac
   done
   printf '%s' "$v"
 }
@@ -82,7 +82,6 @@ devvm() {
     case "$verb" in
       up)    "$drv" ensure "$name" "$repo" "$_DEVVM_HERE" && "$drv" shell "$name" "$repo" "$_DEVVM_HERE" ;;
       shell) "$drv" shell  "$name" "$repo" "$_DEVVM_HERE" ;;
-      setup) "$drv" setup  "$name" "$repo" "$_DEVVM_HERE" ;;
       stop)  "$drv" stop   "$name" "$repo" "$_DEVVM_HERE" ;;
       rm)    "$drv" rm     "$name" "$repo" "$_DEVVM_HERE" ;;
     esac

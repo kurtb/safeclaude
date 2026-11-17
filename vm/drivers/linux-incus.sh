@@ -8,7 +8,7 @@
 # in-VM clone via `devvm shell`/`incus exec` (VS Code Remote-SSH is a planned
 # follow-up; the cloud image ships no sshd/host key yet).
 #
-# Verbs (from ../devvm.sh):  ensure <name> <repo> <vmdir> | shell | setup | stop | rm
+# Verbs (from ../devvm.sh):  ensure <name> <repo> <vmdir> | shell | stop | rm
 #
 # STATUS: validated live on ARM Incus 7.5.1 + KVM (create, boot, clone, egress
 # smoke test). Spots still needing a live check are marked VERIFY.
@@ -90,8 +90,8 @@ clone_repo() {
   local base; base="$(basename "${repo%.git}")"
   [[ "$base" =~ ^[A-Za-z0-9._-]+$ ]] && [ "$base" != . ] && [ "$base" != .. ] \
     || { echo "refusing odd repo dir name derived from origin: '$base'" >&2; return 1; }
-  # Bare VM (setup not run yet): no dev user/git to clone with. `devvm setup`
-  # (or the next `devvm`) clones once it has.
+  # Bare VM (guest-setup.sh not run yet): no dev user/git to clone with. The
+  # next `devvm` clones once it has.
   [ "$(guest_user)" = dev ] || return 0
   local uid gid home=/home/dev
   uid="$(incus exec "$name" -- id -u dev)"; gid="$(incus exec "$name" -- id -g dev)"
@@ -123,18 +123,7 @@ cmd_ensure() {
   wait_agent
   # Nothing is installed at boot: a new VM is a bare machine. Say how to set it up.
   [ "$(guest_user)" = dev ] \
-    || echo "NOTE: $name is a bare VM (root shell). Run 'devvm setup' to install git/gh/Docker/Claude Code and create the 'dev' user." >&2
-  clone_repo
-}
-
-# Push the guest setup script in and run it as guest root, in the foreground so
-# failures are visible. Idempotent — safe to re-run. (It comes from the checkout,
-# which is fine: it runs as GUEST root only, never on the host.)
-cmd_setup() {
-  need
-  is_running || { echo "$name is not running; run 'devvm' first" >&2; exit 1; }
-  incus file push --mode 0755 "$VMDIR/guest-setup.sh" "$name/root/guest-setup.sh"
-  incus exec "$name" -- bash /root/guest-setup.sh
+    || echo "NOTE: $name is a bare VM (root shell). To set it up, run vm/guest-setup.sh inside it as root (see vm/QUICKSTART.md)." >&2
   clone_repo
 }
 
@@ -152,7 +141,6 @@ cmd_shell() {
 case "$verb" in
   ensure) cmd_ensure ;;
   shell)  cmd_shell ;;
-  setup)  cmd_setup ;;
   stop)   need; incus stop "$name" ;;
   rm)     need; incus delete -f "$name" ;;
   *) echo "unknown verb: $verb" >&2; exit 1 ;;
