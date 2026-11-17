@@ -221,10 +221,10 @@ dotclaude/
 - GitHub's published IP ranges (`web`, `api`, `git`, `pages` from `api.github.com/meta` — `pages` makes any `*.github.io` reachable)
 - Anthropic, OpenAI, Google AI / gcloud endpoints — including `mcp-proxy.anthropic.com`, which carries your claude.ai connectors (Linear, Claude Docs, Gmail, …); see the note below
 - Langfuse (LLM observability — `langfuse.com`, `cloud.langfuse.com`, `us.cloud.langfuse.com`)
-- npm, PyPI, Bun, Ubuntu apt mirrors
-- Pulumi, GitHub auxiliary CDNs (objects, raw, codeload), GitHub Pages
+- npm, PyPI, Bun, Node.js downloads (`nodejs.org`, for `fnm install`), Ubuntu apt mirrors
+- Pulumi, GitHub auxiliary CDNs (objects, raw, codeload, `release-assets` for release downloads, `pkg-containers` for ghcr.io layers), GitHub Pages
 - Kubernetes (`dl.k8s.io`, `registry.k8s.io`), Helm (`get.helm.sh`), Istio (`istio-release.storage.googleapis.com`)
-- Container registries (`ghcr.io`, `quay.io`, `docker.io`)
+- Container registries (`ghcr.io`, `quay.io` and its `cdn*.quay.io` blob CDNs, `docker.io`) and `cdn.registry.k8s.io` for `registry.k8s.io` layers
 - Tailscale: package mirror, coordination/login (`controlplane`/`login.tailscale.com`), and the DERP relay IPs (fetched from the published DERP map — see [Tailscale](#tailscale))
 - Localhost, your Docker host network, DNS, SSH
 
@@ -238,6 +238,10 @@ Egress to anything else is rejected.
 > that connector can. Disable connectors you don't want a YOLO agent to use.
 
 ### Adding your own domains
+
+A download that fails on a host you trust means that host isn't on the list.
+(In the [dev-box VM](vm/README.md) lane the equivalent is `devvm allow <host>`,
+which applies live — see [vm/README.md](vm/README.md#adding-hosts).)
 
 Keep a personal allowlist that persists across rebuilds:
 

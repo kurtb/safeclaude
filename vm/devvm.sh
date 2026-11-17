@@ -12,6 +12,9 @@
 #
 #   source ~/.../vm/devvm.sh   # safe to source: no top-level `set -e`
 #   devvm [up|shell|stop|rm] [--name X]
+#   devvm allow [host ...]     # add hosts to this machine's egress allowlist
+#   devvm allow --rm host ...  # remove them again
+#   devvm allow --refresh      # just re-resolve (fixes stale pinned IPs)
 #
 # NOTE: no `set -euo pipefail` at file scope — that would kill an interactive
 # shell when sourced. It's scoped to the run subshell inside devvm() instead.
@@ -69,8 +72,75 @@ _devvm_driver() {
   esac
 }
 
+# `devvm allow` — this host's own additions to the egress allowlist.
+#
+# Extras live in a root-owned file on the HOST (outside the checkout and the
+# install dir), merged with vm/allowlist.conf by host-egress.sh and the driver.
+# Global to the machine: every devvm VM shares one bridge and one list. Run it
+# on the host — nothing inside a guest can reach this file, by design.
+_DEVVM_LOCAL_ALLOW="/etc/devvm/allowlist.local"
+
+_devvm_allow() {
+  local drv mode=add h bare changed=0 hosts=() file="$_DEVVM_LOCAL_ALLOW"
+  drv="$(_devvm_driver)" || return 1
+  case "${1:-}" in
+    --rm)      mode=rm; shift ;;
+    --refresh) mode=refresh; shift ;;
+    -h|--help) echo "usage: devvm allow [host ...] | --rm host ... | --refresh"; return 0 ;;
+    -*)        echo "devvm allow: unknown option: $1" >&2; return 1 ;;
+  esac
+
+  if [ "$mode" = add ] && [ $# -eq 0 ]; then
+    echo "extra egress allowlist ($file):"
+    if [ -s "$file" ]; then sed 's/^/  /' "$file"; else echo "  (none)"; fi
+    echo "base list: $_DEVVM_HERE/allowlist.conf"
+    return 0
+  fi
+  [ "$mode" = refresh ] || [ $# -gt 0 ] || { echo "devvm allow --rm: name at least one host" >&2; return 1; }
+
+  # Exact host names only: every layer (DNS, SNI proxy, IP pin) works per name,
+  # so a wildcard can't be expressed. Accept a pasted URL by trimming it down.
+  for h in "$@"; do
+    h="$(printf '%s' "$h" | tr '[:upper:]' '[:lower:]')"
+    h="${h#http://}"; h="${h#https://}"; h="${h%%/*}"; h="${h%.}"
+    bare="${h#cidr:}"
+    if ! [[ "$bare" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$ ]]; then
+      echo "devvm allow: not a host name: '$h' (exact names only — no wildcards, IPs or ports)" >&2
+      return 1
+    fi
+    hosts+=("$h")
+  done
+
+  for h in "${hosts[@]}"; do
+    bare="${h#cidr:}"
+    if [ "$mode" = add ]; then
+      if grep -qxF -e "$bare" -e "cidr:$bare" "$file" 2>/dev/null \
+         || grep -qxF -e "$bare" -e "cidr:$bare" "$_DEVVM_HERE/allowlist.conf"; then
+        echo "already allowed: $bare"; continue
+      fi
+      sudo install -d -o root -g root -m 0755 "$(dirname "$file")"
+      printf '%s\n' "$h" | sudo tee -a "$file" >/dev/null
+      sudo chown root:root "$file"; sudo chmod 0644 "$file"
+      echo "added: $h"; changed=1
+    else
+      if grep -qxF -e "$bare" -e "cidr:$bare" "$file" 2>/dev/null; then
+        sudo sed -i -e "/^${bare//./\\.}\$/d" -e "/^cidr:${bare//./\\.}\$/d" "$file"
+        echo "removed: $bare"; changed=1
+      elif grep -qxF -e "$bare" -e "cidr:$bare" "$_DEVVM_HERE/allowlist.conf"; then
+        echo "$bare is on the base list (vm/allowlist.conf), not an extra — edit that file and re-run install-host.sh" >&2
+      else
+        echo "not in the extras: $bare"
+      fi
+    fi
+  done
+
+  [ "$mode" = refresh ] || [ "$changed" = 1 ] || return 0
+  "$drv" refresh _ "" "$_DEVVM_HERE"
+}
+
 devvm() {
   local verb name drv repo
+  if [ "${1:-}" = allow ]; then shift; ( set -euo pipefail; _devvm_allow "$@" ); return; fi
   verb="$(_devvm_verb "$@")"
   name="$(_devvm_name "$@")"
   drv="$(_devvm_driver)" || return 1
