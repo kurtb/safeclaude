@@ -47,9 +47,24 @@ others don't:
    survive; all other direct egress dropped.
 
 Clone-only: `devvm` reads the current folder's git remote and the guest clones it
-into `/root/workspace`; nothing is mounted from the host. Edit the clone in-guest with `devvm shell` / `incus exec` (or move files with
-`incus file`). *(VS Code Remote-SSH is a planned follow-up — the cloud image
-ships no SSH server or host key yet.)* Private repos: `export GH_TOKEN=…` before `devvm up`.
+into `/home/dev/workspace`; nothing is mounted from the host. Edit the clone
+in-guest with `devvm shell` (or move files with `incus file`). *(VS Code
+Remote-SSH is a planned follow-up — the cloud image ships no SSH server or host
+key yet.)*
+
+**The guest is a fresh dev machine.** `devvm shell` logs you in as the
+unprivileged **`dev`** user (in the `docker` group, with passwordless `sudo`) —
+not root, because Claude Code's `--dangerously-skip-permissions` and minikube's
+docker driver both refuse to run as root. Guest `sudo` is fine here, unlike in
+the container: the egress boundary is enforced on the host, where guest root
+can't reach it. First boot installs only what every project needs (git, `gh`,
+Docker, Claude Code); a project's own toolchain is the project's job — give the
+repo a bootstrap command. `devvm up` warns if a first-boot install failed.
+
+**devvm never handles credentials.** A public repo is cloned for you. For a
+private one the clone is skipped (not fatal): inside the VM run
+`gh auth login --with-token` with a token scoped to what *that VM* should be
+able to do, then `gh auth setup-git` and `git clone`. Same for `claude login`.
 
 ## Known limitations (accepted — same posture as the container)
 
@@ -85,8 +100,10 @@ claimed solved:
   hosts, but host processes already have unrestricted egress (the nft rules clamp
   only the guest subnet), so it grants no reach they lack. Closed in a follow-up
   that runs devvm's Squid as a **dedicated instance** and retires the stock :3128.
-- **`GH_TOKEN`** is persisted inside a guest-root VM — use a fine-grained,
-  read-only, repo-scoped token.
+- **Credentials you put in the guest** (a `gh` token, the Claude login) are
+  readable by the agent running there — it is `dev` with `sudo`. Give each VM a
+  fine-grained token scoped to its repos and to the least it needs (read-only
+  unless the agent should push).
 
 This is the same boundary the container accepts: it stops *accidental* and
 *broad* egress, not a determined exfil via an allowlisted service.
