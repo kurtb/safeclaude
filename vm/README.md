@@ -66,8 +66,7 @@ is enforced on the host, where guest root can't reach it. A project's own
 toolchain is the project's job — give the repo a bootstrap command.
 
 **devvm never handles credentials.** Once setup has run, a public repo is cloned
-for you. For a
-private one the clone is skipped (not fatal): inside the VM run
+for you. For a private one the clone is skipped (not fatal): inside the VM run
 `gh auth login --with-token` with a token scoped to what *that VM* should be
 able to do, then `gh auth setup-git` and `git clone`. Same for `claude login`.
 

@@ -6,7 +6,8 @@
 # Strongest of the OS drivers. No host filesystem is mounted (clone-only), and
 # all egress is enforced host-side where guest-root can't reach it. Edit the
 # in-VM clone via `devvm shell`/`incus exec` (VS Code Remote-SSH is a planned
-# follow-up; the cloud image ships no sshd/host key yet).
+# follow-up; the image ships no sshd/host key yet). A new VM boots BARE: nothing
+# is installed at boot; vm/guest-setup.sh is run by hand inside it.
 #
 # Verbs (from ../devvm.sh):  ensure <name> <repo> <vmdir> | shell | stop | rm
 #
@@ -134,8 +135,9 @@ cmd_shell() {
   # /etc/profile.d/devvm-workspace.sh cd's into the clone. Plain `su -` (no -c)
   # keeps the tty and job control.
   if [ "$(guest_user)" = dev ]; then exec incus exec "$name" -- su - dev; fi
-  # Bare VM (setup not run): root shell.
-  exec incus exec "$name" -- bash -l
+  # No dev user: root shell. A bare VM lands in /root; a VM from before the dev
+  # user existed still lands in its single clone under /root/workspace.
+  exec incus exec "$name" -- bash -lc 'd=(/root/workspace/*/); [ ${#d[@]} -eq 1 ] && [ -d "${d[0]}" ] && cd "${d[0]}"; exec bash -l'
 }
 
 case "$verb" in

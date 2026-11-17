@@ -62,10 +62,14 @@ if [ -x /home/dev/.local/bin/claude ]; then
 else
   # Same installer as the container image; lands in ~/.local/bin, which Ubuntu's
   # ~/.profile puts on PATH at login.
-  su - dev -c 'curl -fsSL --retry 3 https://claude.ai/install.sh | bash'
+  # pipefail INSIDE the su shell (the outer setting doesn't carry over), so a
+  # failed download fails the script instead of feeding bash an empty installer.
+  su - dev -s /bin/bash -c 'set -o pipefail; curl -fsSL --retry 3 https://claude.ai/install.sh | bash'
 fi
+[ -x /home/dev/.local/bin/claude ] \
+  || { echo "FAILED: Claude Code did not install (/home/dev/.local/bin/claude is missing). Fix the cause above and re-run this script." >&2; exit 1; }
 
 step "Done"
 echo "docker: $(docker --version)"
-echo "claude: $(su - dev -c 'claude --version' 2>&1 | tail -1)"
+echo "claude: $(su - dev -s /bin/bash -c 'claude --version')"
 echo "Next: exit, re-enter with 'devvm shell' (now logs in as dev), then:  gh auth login --with-token && gh auth setup-git ; claude login"
