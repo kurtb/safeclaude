@@ -4,21 +4,44 @@
 # Runs on first boot UNDER the egress policy (drivers apply it before boot), so
 # every host this touches must be allowlisted, and HTTPS flows through the
 # transparent SNI proxy. CLONE-ONLY: no host mount; the driver git-clones the
-# project into /root/workspace after boot.
+# project into /home/dev/workspace after boot (public repos; private ones you
+# authenticate and clone yourself inside the VM).
+#
+# Only what EVERY project needs goes here (git, gh, Docker, Claude Code). A
+# project's own toolchain is the project's job: a bootstrap command in the repo.
 package_update: true
 packages: [curl, git, jq, gh]
+# Work happens as `dev`, not root: Claude Code refuses
+# --dangerously-skip-permissions as root, and minikube's docker driver refuses
+# root too. Passwordless sudo is fine HERE (unlike the container): the egress
+# boundary is enforced on the host, where guest root can't reach it.
+users:
+  - name: dev
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+write_files:
+  # On login, land in the project: the single clone if there is exactly one,
+  # else the workspace root.
+  - path: /etc/profile.d/devvm-workspace.sh
+    permissions: "0644"
+    content: |
+      if [ "$(id -un)" = dev ] && [ -d "$HOME/workspace" ]; then
+        _n=0
+        for _d in "$HOME"/workspace/*/; do
+          [ -d "$_d" ] && _n=$((_n+1)) && _one="$_d"
+        done
+        if [ "$_n" = 1 ]; then cd "$_one"; else cd "$HOME/workspace"; fi
+        unset _n _d _one
+      fi
 runcmd:
   # Docker — native in a VM (no DinD, no host-socket mount). NOTE: get.docker.com
   # is an unpinned root installer (upstream provides no pinned URL); the egress
   # allowlist is the mitigation. TODO: pin to a packaged docker-ce version.
-  - [ bash, -lc, "curl -fsSL https://get.docker.com | sh" ]
-  # Claude Code — substrate-agnostic; same installer as the container image.
-  # NOTE: `|| true` means a failed install is non-fatal to first boot (re-runs
-  # pick it up); check `claude --version` after boot.
-  - [ bash, -lc, "curl -fsSL https://claude.ai/install.sh | bash || true" ]
-  - [ bash, -lc, "install -d -m 0755 /root/workspace" ]
-  # Edit the clone from the host via `incus exec`/`incus file`. (VS Code
-  # Remote-SSH is a planned follow-up: the cloud image ships no sshd or host key.)
-# TODO: port the rest of the Dockerfile toolchain (node/fnm, bun, codex, gstack,
-# yolo-* wrappers, safeclaude-doctor) and pin versions; share steps with the
-# Dockerfile so the VM and image toolchains don't drift.
+  - [ bash, -lc, "curl -fsSL --retry 3 https://get.docker.com | sh" ]
+  - [ bash, -lc, "usermod -aG docker dev" ]
+  - [ bash, -lc, "install -d -o dev -g dev -m 0755 /home/dev/workspace" ]
+  # Claude Code — same installer as the container image, installed for `dev`
+  # (lands in ~/.local/bin, which Ubuntu's ~/.profile puts on PATH at login).
+  # Failures are not hidden: each step is independent, and `devvm up` checks for
+  # docker and claude afterwards and prints the fix if either is missing.
+  - [ su, "-", dev, "-c", "curl -fsSL --retry 3 https://claude.ai/install.sh | bash" ]

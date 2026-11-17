@@ -74,6 +74,23 @@ create_if_absent() {
 
 is_running() { local s; s="$(incus info "$name" 2>/dev/null)"; printf '%s' "$s" | grep -qi 'Status: RUNNING'; }
 
+# The account work happens under in the guest. cloud-init creates `dev` (Claude's
+# --dangerously-skip-permissions and minikube's docker driver both refuse root).
+# VMs created before that existed fall back to root.
+guest_user() { incus exec "$name" -- id -u dev >/dev/null 2>&1 && echo dev || echo root; }
+guest_home() { [ "$1" = dev ] && echo /home/dev || echo /root; }
+
+# First-boot installs can fail (network not ready, blocked host) and cloud-init
+# only runs them once — so say what is missing instead of leaving it to be found.
+check_guest() {
+  local u home; u="$(guest_user)"; home="$(guest_home "$u")"
+  [ "$u" = dev ] || echo "NOTE: $name has no 'dev' user (created by an older devvm), so you get a root shell. Claude's yolo mode and minikube refuse root — 'devvm rm' then 'devvm' recreates it." >&2
+  incus exec "$name" -- sh -c 'command -v docker >/dev/null' \
+    || echo "WARNING: docker is missing in $name (first-boot install failed). In the VM: curl -fsSL https://get.docker.com | sudo sh && sudo usermod -aG docker dev" >&2
+  incus exec "$name" -- test -x "$home/.local/bin/claude" \
+    || echo "WARNING: claude is missing in $name (first-boot install failed). In the VM, as $u: curl -fsSL https://claude.ai/install.sh | bash" >&2
+}
+
 clone_repo() {
   [ -n "$repo" ] || { echo "no git origin in \$PWD; starting empty workspace"; return 0; }
   # Only https:// is cloneable (SSH has no keys/egress; reject ext::/git:: etc.).
@@ -86,24 +103,20 @@ clone_repo() {
   local base; base="$(basename "${repo%.git}")"
   [[ "$base" =~ ^[A-Za-z0-9._-]+$ ]] && [ "$base" != . ] && [ "$base" != .. ] \
     || { echo "refusing odd repo dir name derived from origin: '$base'" >&2; return 1; }
-  local dir="/root/workspace/$base"
+  local u home uid gid
+  u="$(guest_user)"; home="$(guest_home "$u")"
+  uid="$(incus exec "$name" -- id -u "$u")"; gid="$(incus exec "$name" -- id -g "$u")"
+  local dir="$home/workspace/$base"
   incus exec "$name" -- test -d "$dir/.git" >/dev/null 2>&1 && return 0
-  # Wait for cloud-init to finish (git/gh/docker come from it), not just the agent.
-  incus exec "$name" -- cloud-init status --wait >/dev/null 2>&1 || true
-  # gh auth via stdin (never in argv/logs). The token is handed to a guest-root
-  # agent and persisted there, so use a FINE-GRAINED, READ-ONLY, repo-scoped
-  # token — treat it as compromised-on-use. Failures are reported, not swallowed.
-  if [ -n "${GH_TOKEN:-}" ]; then
-    if printf '%s' "$GH_TOKEN" | incus exec "$name" -- gh auth login --with-token; then
-      incus exec "$name" -- gh auth setup-git || echo "WARNING: gh auth setup-git failed" >&2
-    else
-      echo "WARNING: gh auth login failed (token invalid/expired?)" >&2
-    fi
-  fi
-  echo "Cloning into the guest ..."
-  # repo/dir passed as positional args ($1/$2), never spliced into the string.
-  incus exec "$name" -- bash -lc 'install -d /root/workspace && git clone -- "$1" "$2"' _ "$repo" "$dir" \
-    || { echo "clone failed (private repo? set GH_TOKEN before 'devvm up')" >&2; return 1; }
+  echo "Cloning into the guest ($dir) ..."
+  # NO credentials are passed in: devvm never handles a GitHub token. A public
+  # repo clones here; a private one fails, which is NOT fatal — you authenticate
+  # inside the VM with whatever scoped token that VM should hold, then clone.
+  # repo/dir are positional args ($1..), never spliced into the string.
+  incus exec "$name" --user "$uid" --group "$gid" --env "HOME=$home" --cwd "$home" -- \
+    sh -c 'mkdir -p "$1" && GIT_TERMINAL_PROMPT=0 git clone -- "$2" "$3"' _ "$home/workspace" "$repo" "$dir" \
+    || echo "clone skipped (private repo?). In the VM: gh auth login --with-token && gh auth setup-git && git clone $repo" >&2
+  return 0
 }
 
 wait_agent() {
@@ -118,12 +131,21 @@ cmd_ensure() {
   [ -x "$egress" ] || { echo "host egress not installed; run: sudo \"$VMDIR/install-host.sh\"" >&2; exit 1; }
   sudo "$egress"                                # host egress re-applied every run (never fail open)
   is_running || incus start "$name"
-  wait_agent; clone_repo
+  wait_agent
+  # Wait for cloud-init to finish (the dev user, git/gh/docker/claude come from
+  # it), not just the agent. Returns immediately once it has completed.
+  incus exec "$name" -- cloud-init status --wait >/dev/null 2>&1 || true
+  check_guest; clone_repo
 }
 
 cmd_shell() {
   need
-  # cd into the single clone if there's exactly one, else the workspace root.
+  # Login shell as the unprivileged `dev` user (docker group + passwordless sudo;
+  # the egress boundary is on the host, so guest sudo can't weaken it). The guest's
+  # /etc/profile.d/devvm-workspace.sh cd's into the clone. Plain `su -` (no -c)
+  # keeps the tty and job control.
+  if [ "$(guest_user)" = dev ]; then exec incus exec "$name" -- su - dev; fi
+  # Older VM without the dev user: root shell, cd into the single clone if any.
   exec incus exec "$name" -- bash -lc 'd=(/root/workspace/*/); [ ${#d[@]} -eq 1 ] && [ -d "${d[0]}" ] && cd "${d[0]}" || cd /root/workspace; exec bash -l'
 }
 

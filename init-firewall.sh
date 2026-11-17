@@ -84,6 +84,7 @@ ALLOWED_DOMAINS=(
     "api.anthropic.com"
     "downloads.claude.ai"
     "claude.ai"
+    "platform.claude.com"   # `claude login` (OAuth)
     "statsig.anthropic.com"
     "statsig.com"
     "sentry.io"

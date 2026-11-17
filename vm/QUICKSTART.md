@@ -49,16 +49,16 @@ nothing a repo-writer (or an agent) changes can run as root.
 
 ```bash
 source ./vm/devvm.sh           # provides the `devvm` function (safe to source)
-cd ~/path/to/your-project      # a git repo; its https origin is cloned inside
-# Private repo? export a fine-grained, READ-ONLY token first:
-#   export GH_TOKEN=github_pat_...
+cd ~/path/to/your-project      # a git repo; a public https origin is cloned inside
 devvm                          # create network+VM (first run), apply egress, boot, clone, shell in
 ```
 
 What happens, in order: create `devvmbr0` (Incus firewall off, NAT off, DNS
 off — we own all three) → `incus init` the VM stopped → `sudo` the host egress
 (dest-IP pin + SNI proxy + allowlist DNS + default-deny) → start → clone your
-repo inside → drop you into a shell in `/root/workspace/<repo>`.
+repo inside (public repos; see Phase 4 for private ones) → drop you into a shell
+as the `dev` user in `/home/dev/workspace/<repo>`. `devvm up` warns if Docker or
+Claude Code failed to install on first boot and prints the fix.
 
 ## Phase 3 — verify the boundary (do this before trusting it)
 
@@ -80,21 +80,34 @@ incus list                            # your VM
 Why: this is the whole point — confirm egress is allowlisted *and* the
 `--resolve` front-door is shut, from outside the guest's control.
 
-## Phase 4 — bootstrap Claude inside
+## Phase 4 — log in and start Claude inside
 
-Claude Code is installed by cloud-init. Inside the VM shell:
+Treat the VM as a fresh dev machine. `devvm` never handles your credentials — you
+log in inside the VM, as the `dev` user, with what *that VM* should hold:
 
 ```bash
-claude --version                       # confirm it installed
-claude login                           # browser/device login; endpoints are allowlisted
-#   (or copy auth like the container's model if you prefer)
-claude                                 # start it; --dangerously-skip-permissions is
-                                       # safe here — egress is capped and the host FS isn't mounted
+claude --version                       # installed by cloud-init
+gh auth login --with-token             # paste a fine-grained token scoped to this
+                                       # VM's repos (read-only unless the agent
+                                       # should push), then Ctrl-D
+gh auth setup-git
+# Private repo (the automatic clone was skipped):
+#   git clone https://github.com/<you>/<repo>.git ~/workspace/<repo> && cd ~/workspace/<repo>
+claude login                           # endpoints are allowlisted
+claude --dangerously-skip-permissions  # fine here: egress is capped on the host
+                                       # and the host FS isn't mounted
 ```
 
-Edit the clone in-guest (`devvm shell` / `incus exec`), or move files with
-`incus file`. VS Code Remote-SSH is a planned follow-up — the cloud image ships
-no SSH server or host key yet.
+You are `dev`, not root (Claude's skip-permissions mode and minikube's docker
+driver both refuse root), with `docker` access and passwordless `sudo`. Anything
+the project needs beyond git/`gh`/Docker/Claude Code is the repo's own bootstrap
+step. If a download fails with "Could not resolve host", that host isn't on the
+allowlist: add it to `vm/allowlist.conf` on the host, re-run
+`sudo ./vm/install-host.sh`, then `devvm` again.
+
+Edit the clone in-guest (`devvm shell`), or move files with `incus file`. VS Code
+Remote-SSH is a planned follow-up — the cloud image ships no SSH server or host
+key yet.
 
 ## Teardown
 

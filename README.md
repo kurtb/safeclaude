@@ -8,7 +8,9 @@ Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) i
 > ([`vm/allowlist.conf`](vm/allowlist.conf), separate from the container's list
 > below) — Incus on Linux, with
 > macOS/WSL2 drivers planned. It's a complementary lane, not a replacement for
-> the container. See [`vm/README.md`](vm/README.md). Status: experimental; the
+> the container. You work in the VM as an unprivileged `dev` user and log in to
+> GitHub/Claude there yourself (`devvm` never handles credentials). See
+> [`vm/README.md`](vm/README.md). Status: experimental; the
 > Linux/Incus egress boundary is validated live (see its known limitations).
 
 ## What's included
