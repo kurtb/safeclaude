@@ -8,7 +8,7 @@
 # in-VM clone via `devvm shell`/`incus exec` (VS Code Remote-SSH is a planned
 # follow-up; the cloud image ships no sshd/host key yet).
 #
-# Verbs (from ../devvm.sh):  ensure <name> <repo> <vmdir> | shell | stop | rm
+# Verbs (from ../devvm.sh):  ensure <name> <repo> <vmdir> | shell | setup | stop | rm
 #
 # STATUS: validated live on ARM Incus 7.5.1 + KVM (create, boot, clone, egress
 # smoke test). Spots still needing a live check are marked VERIFY.
@@ -61,7 +61,6 @@ create_if_absent() {
   # disk device, so the host FS is never reachable from the guest.
   incus init "$IMAGE" "$name" --vm \
     -c limits.cpu=4 -c limits.memory=8GiB \
-    -c cloud-init.user-data="$(cat "$VMDIR/cloud-init.yaml")" \
     --network "$NET"
   # Don't auto-start on host boot: nft rules aren't persisted, so an autostarted
   # VM could come up before egress is applied. `devvm`
@@ -74,22 +73,10 @@ create_if_absent() {
 
 is_running() { local s; s="$(incus info "$name" 2>/dev/null)"; printf '%s' "$s" | grep -qi 'Status: RUNNING'; }
 
-# The account work happens under in the guest. cloud-init creates `dev` (Claude's
-# --dangerously-skip-permissions and minikube's docker driver both refuse root).
-# VMs created before that existed fall back to root.
+# The account work happens under in the guest: `dev` once guest-setup.sh has run
+# (Claude's --dangerously-skip-permissions and minikube's docker driver both
+# refuse root), root in a bare VM.
 guest_user() { incus exec "$name" -- id -u dev >/dev/null 2>&1 && echo dev || echo root; }
-guest_home() { [ "$1" = dev ] && echo /home/dev || echo /root; }
-
-# First-boot installs can fail (network not ready, blocked host) and cloud-init
-# only runs them once — so say what is missing instead of leaving it to be found.
-check_guest() {
-  local u home; u="$(guest_user)"; home="$(guest_home "$u")"
-  [ "$u" = dev ] || echo "NOTE: $name has no 'dev' user (created by an older devvm), so you get a root shell. Claude's yolo mode and minikube refuse root — 'devvm rm' then 'devvm' recreates it." >&2
-  incus exec "$name" -- sh -c 'command -v docker >/dev/null' \
-    || echo "WARNING: docker is missing in $name (first-boot install failed). In the VM: curl -fsSL https://get.docker.com | sudo sh && sudo usermod -aG docker dev" >&2
-  incus exec "$name" -- test -x "$home/.local/bin/claude" \
-    || echo "WARNING: claude is missing in $name (first-boot install failed). In the VM, as $u: curl -fsSL https://claude.ai/install.sh | bash" >&2
-}
 
 clone_repo() {
   [ -n "$repo" ] || { echo "no git origin in \$PWD; starting empty workspace"; return 0; }
@@ -103,9 +90,11 @@ clone_repo() {
   local base; base="$(basename "${repo%.git}")"
   [[ "$base" =~ ^[A-Za-z0-9._-]+$ ]] && [ "$base" != . ] && [ "$base" != .. ] \
     || { echo "refusing odd repo dir name derived from origin: '$base'" >&2; return 1; }
-  local u home uid gid
-  u="$(guest_user)"; home="$(guest_home "$u")"
-  uid="$(incus exec "$name" -- id -u "$u")"; gid="$(incus exec "$name" -- id -g "$u")"
+  # Bare VM (setup not run yet): no dev user/git to clone with. `devvm setup`
+  # (or the next `devvm`) clones once it has.
+  [ "$(guest_user)" = dev ] || return 0
+  local uid gid home=/home/dev
+  uid="$(incus exec "$name" -- id -u dev)"; gid="$(incus exec "$name" -- id -g dev)"
   local dir="$home/workspace/$base"
   incus exec "$name" -- test -d "$dir/.git" >/dev/null 2>&1 && return 0
   echo "Cloning into the guest ($dir) ..."
@@ -121,7 +110,7 @@ clone_repo() {
 
 wait_agent() {
   for _ in $(seq 1 60); do incus exec "$name" -- true >/dev/null 2>&1 && return 0; sleep 2; done
-  echo "WARNING: guest agent not ready; cloud-init may still be running" >&2
+  echo "WARNING: guest agent not ready after 120s (is the VM running? incus list)" >&2
 }
 
 cmd_ensure() {
@@ -132,10 +121,21 @@ cmd_ensure() {
   sudo "$egress"                                # host egress re-applied every run (never fail open)
   is_running || incus start "$name"
   wait_agent
-  # Wait for cloud-init to finish (the dev user, git/gh/docker/claude come from
-  # it), not just the agent. Returns immediately once it has completed.
-  incus exec "$name" -- cloud-init status --wait >/dev/null 2>&1 || true
-  check_guest; clone_repo
+  # Nothing is installed at boot: a new VM is a bare machine. Say how to set it up.
+  [ "$(guest_user)" = dev ] \
+    || echo "NOTE: $name is a bare VM (root shell). Run 'devvm setup' to install git/gh/Docker/Claude Code and create the 'dev' user." >&2
+  clone_repo
+}
+
+# Push the guest setup script in and run it as guest root, in the foreground so
+# failures are visible. Idempotent — safe to re-run. (It comes from the checkout,
+# which is fine: it runs as GUEST root only, never on the host.)
+cmd_setup() {
+  need
+  is_running || { echo "$name is not running; run 'devvm' first" >&2; exit 1; }
+  incus file push --mode 0755 "$VMDIR/guest-setup.sh" "$name/root/guest-setup.sh"
+  incus exec "$name" -- bash /root/guest-setup.sh
+  clone_repo
 }
 
 cmd_shell() {
@@ -145,13 +145,14 @@ cmd_shell() {
   # /etc/profile.d/devvm-workspace.sh cd's into the clone. Plain `su -` (no -c)
   # keeps the tty and job control.
   if [ "$(guest_user)" = dev ]; then exec incus exec "$name" -- su - dev; fi
-  # Older VM without the dev user: root shell, cd into the single clone if any.
-  exec incus exec "$name" -- bash -lc 'd=(/root/workspace/*/); [ ${#d[@]} -eq 1 ] && [ -d "${d[0]}" ] && cd "${d[0]}" || cd /root/workspace; exec bash -l'
+  # Bare VM (setup not run): root shell.
+  exec incus exec "$name" -- bash -l
 }
 
 case "$verb" in
   ensure) cmd_ensure ;;
   shell)  cmd_shell ;;
+  setup)  cmd_setup ;;
   stop)   need; incus stop "$name" ;;
   rm)     need; incus delete -f "$name" ;;
   *) echo "unknown verb: $verb" >&2; exit 1 ;;

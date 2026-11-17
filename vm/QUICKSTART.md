@@ -50,15 +50,19 @@ nothing a repo-writer (or an agent) changes can run as root.
 ```bash
 source ./vm/devvm.sh           # provides the `devvm` function (safe to source)
 cd ~/path/to/your-project      # a git repo; a public https origin is cloned inside
-devvm                          # create network+VM (first run), apply egress, boot, clone, shell in
+devvm                          # create network+VM (first run), apply egress, boot, shell in (bare VM, root)
+# exit that shell, then:
+devvm setup                    # install git/gh/Docker/Claude Code + create the `dev` user (re-runnable)
+devvm shell                    # back in, now as `dev`
 ```
 
 What happens, in order: create `devvmbr0` (Incus firewall off, NAT off, DNS
 off — we own all three) → `incus init` the VM stopped → `sudo` the host egress
-(dest-IP pin + SNI proxy + allowlist DNS + default-deny) → start → clone your
-repo inside (public repos; see Phase 4 for private ones) → drop you into a shell
-as the `dev` user in `/home/dev/workspace/<repo>`. `devvm up` warns if Docker or
-Claude Code failed to install on first boot and prints the fix.
+(dest-IP pin + SNI proxy + allowlist DNS + default-deny) → start → root shell in
+a **bare** VM. Nothing is installed at boot. `devvm setup` then runs
+`vm/guest-setup.sh` inside the VM in the foreground, so you see every step and
+any failure; it is safe to re-run. Once it has run, `devvm` also clones a public
+https origin into `/home/dev/workspace/<repo>` and `devvm shell` logs in as `dev`.
 
 ## Phase 3 — verify the boundary (do this before trusting it)
 
@@ -86,7 +90,7 @@ Treat the VM as a fresh dev machine. `devvm` never handles your credentials — 
 log in inside the VM, as the `dev` user, with what *that VM* should hold:
 
 ```bash
-claude --version                       # installed by cloud-init
+claude --version                       # installed by `devvm setup`
 gh auth login --with-token             # paste a fine-grained token scoped to this
                                        # VM's repos (read-only unless the agent
                                        # should push), then Ctrl-D
