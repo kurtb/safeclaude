@@ -85,6 +85,7 @@ ALLOWED_DOMAINS=(
     "downloads.claude.ai"
     "claude.ai"
     "platform.claude.com"   # `claude login` (OAuth)
+    "mcp-proxy.anthropic.com"   # claude.ai connectors (remote MCP via Anthropic's proxy)
     "statsig.anthropic.com"
     "statsig.com"
     "sentry.io"
