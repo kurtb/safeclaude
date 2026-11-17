@@ -219,7 +219,7 @@ dotclaude/
 `init-firewall.sh` (adapted from [anthropics/claude-code/.devcontainer](https://github.com/anthropics/claude-code/tree/main/.devcontainer)) sets iptables `OUTPUT` policy to `DROP`, then allows:
 
 - GitHub's published IP ranges (`web`, `api`, `git`, `pages` from `api.github.com/meta` — `pages` makes any `*.github.io` reachable)
-- Anthropic, OpenAI, Google AI / gcloud endpoints
+- Anthropic, OpenAI, Google AI / gcloud endpoints — including `mcp-proxy.anthropic.com`, which carries your claude.ai connectors (Linear, Claude Docs, Gmail, …); see the note below
 - Langfuse (LLM observability — `langfuse.com`, `cloud.langfuse.com`, `us.cloud.langfuse.com`)
 - npm, PyPI, Bun, Ubuntu apt mirrors
 - Pulumi, GitHub auxiliary CDNs (objects, raw, codeload), GitHub Pages
@@ -229,6 +229,13 @@ dotclaude/
 - Localhost, your Docker host network, DNS, SSH
 
 Egress to anything else is rejected.
+
+> **Connectors are an egress path.** Claude Code reaches claude.ai connectors
+> (remote MCP servers) through one host, `mcp-proxy.anthropic.com`; Anthropic's
+> proxy then talks to the actual service, so the services' own hosts are *not*
+> on the allowlist. That also means any connector enabled on the account you log
+> in with is reachable from the sandbox — an agent can read and write whatever
+> that connector can. Disable connectors you don't want a YOLO agent to use.
 
 ### Adding your own domains
 
