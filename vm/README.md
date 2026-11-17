@@ -14,7 +14,7 @@ that can be shared.
 | Shared (all OS) | Per-OS driver |
 |---|---|
 | `allowlist.conf` — egress allowlist (domain names) | `drivers/linux-incus.sh` (implemented) |
-| `cloud-init.yaml` — guest provisioning | `drivers/darwin-lima.sh` (stub) |
+| `guest-setup.sh` — guest setup, run by hand inside the VM | `drivers/darwin-lima.sh` (stub) |
 | `lib/resolve-allowlist.sh` — domains → SSRF-filtered CIDRs | `drivers/windows-wsl2.sh` (stub) |
 | `lib/host-egress.sh` + `proxy/squid.conf` — dest-IP pin + SNI proxy + DNS + nftables | |
 | `devvm.sh` — CLI + OS detection/dispatch | |
@@ -52,17 +52,21 @@ in-guest with `devvm shell` (or move files with `incus file`). *(VS Code
 Remote-SSH is a planned follow-up — the cloud image ships no SSH server or host
 key yet.)*
 
-**The guest is a fresh dev machine.** `devvm shell` logs you in as the
-unprivileged **`dev`** user (in the `docker` group, with passwordless `sudo`) —
-not root, because Claude Code's `--dangerously-skip-permissions` and minikube's
-docker driver both refuse to run as root. Guest `sudo` is fine here, unlike in
-the container: the egress boundary is enforced on the host, where guest root
-can't reach it. First boot installs only what every project needs (git, `gh`,
-Docker, Claude Code); a project's own toolchain is the project's job — give the
-repo a bootstrap command. `devvm up` warns if a first-boot install failed.
+**The guest is a fresh dev machine.** A new VM boots **bare** — nothing is
+installed at boot, and `devvm` drops you into a root shell. You set it up by
+hand: clone this repo inside the VM and run [`guest-setup.sh`](guest-setup.sh)
+as root (see [`QUICKSTART.md`](QUICKSTART.md)). It runs in the foreground and
+installs only what every project needs (git, `gh`, Docker, Claude Code) and
+creates the unprivileged **`dev`** user (in the `docker` group, with passwordless
+`sudo`). It is idempotent, so re-run it if a step fails. After that `devvm shell`
+logs you in as `dev` — not root, because Claude Code's
+`--dangerously-skip-permissions` and minikube's docker driver both refuse to run
+as root. Guest `sudo` is fine here, unlike in the container: the egress boundary
+is enforced on the host, where guest root can't reach it. A project's own
+toolchain is the project's job — give the repo a bootstrap command.
 
-**devvm never handles credentials.** A public repo is cloned for you. For a
-private one the clone is skipped (not fatal): inside the VM run
+**devvm never handles credentials.** Once setup has run, a public repo is cloned
+for you. For a private one the clone is skipped (not fatal): inside the VM run
 `gh auth login --with-token` with a token scoped to what *that VM* should be
 able to do, then `gh auth setup-git` and `git clone`. Same for `claude login`.
 
