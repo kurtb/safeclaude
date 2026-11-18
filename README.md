@@ -4,13 +4,17 @@ SafeClaude runs coding agents in an Ubuntu VM on a Linux host with KVM. The `dev
 
 ## Install
 
-From a directory you control on the Linux host, download the release installer and run it:
+On the Linux host, run as your normal user:
 
 ```bash
-curl -fL --proto '=https' https://github.com/kurtb/safeclaude/releases/latest/download/install.sh -o install.sh && sudo bash ./install.sh
+curl -fsSL https://github.com/kurtb/safeclaude/releases/latest/download/install.sh | bash
 ```
 
-Run `sudo bash ./install.sh` again to upgrade the host. Each run resolves the latest stable GitHub release, downloads the bundle and checksum for that tag, and verifies the archive before installing it. Running it again on the same release reapplies the host installation. Your Incus storage, project VMs and guest clones persist. To update the tools inside a guest, run `devvm upgrade` from its project directory.
+Rerun the same command to upgrade the host. The script resolves the latest stable release, downloads its bundle and checks its SHA-256 checksum as your user. It then uses sudo to install host packages, the system-wide CLI, and firewall and proxy services. A new Incus APT source uses Zabbly's fingerprint-checked signing key scoped to that source. An existing Zabbly source keeps its host-configured trust settings.
+
+This command trusts the SafeClaude GitHub release and HTTPS. The bundle and checksum come from the same release. To inspect the script first, download `install.sh` from the [latest release](https://github.com/kurtb/safeclaude/releases/latest), read it, then run `bash ./install.sh`. For unattended shell pipelines, enable `set -o pipefail` to propagate a curl failure.
+
+Running it again on the same release reapplies the host installation. Your Incus storage, project VMs and guest clones persist. To update the tools inside a guest, run `devvm upgrade` from its project directory.
 
 To install a specific version, download **devvm.tar.gz** and **devvm.tar.gz.sha256** from that [GitHub release](https://github.com/kurtb/safeclaude/releases) and run:
 

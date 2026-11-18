@@ -4,8 +4,12 @@ set -euo pipefail
 ci=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d "${RUNNER_TEMP:?}/devvm-XXXXXX")
 trap 'rm -rf "$work"' EXIT
-"$ci/package-vm.sh" "$work"
-cd "$work"
+export fixture="$work"
+mkdir "$work/bin" "$work/v1.0.0"
+ln -s "$ci/../vm/test/release-curl.sh" "$work/bin/curl"
+echo 'https://github.com/kurtb/safeclaude/releases/tag/v1.0.0' > "$work/latest"
+cd "$work/v1.0.0"
+"$ci/package-vm.sh" "$PWD"
 sha256sum -c devvm.tar.gz.sha256
 tar -xzf devvm.tar.gz
 
@@ -17,5 +21,6 @@ sudo sed -i "s|mirror+file:/etc/apt/apt-mirrors.txt|$mirror|g" /etc/apt/sources.
 # root-owned parent paths for its privileged runtime.
 sudo chown root:root /usr/local /usr/local/lib /usr/local/bin
 sudo chmod go-w /usr/local /usr/local/lib /usr/local/bin
-sudo ./devvm/install-host.sh
+# Exercise the piped entry point as the runner user, including real sudo.
+PATH="$work/bin:$PATH" bash < install.sh
 sudo ./devvm/install-host.sh --check
