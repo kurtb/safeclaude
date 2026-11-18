@@ -95,6 +95,25 @@ if [ -n "$(g dig +short +tries=1 +time=3 @"$PROXY_IP" pypi.org A 2>/dev/null)" ]
 if g dig +tries=1 +time=3 @1.1.1.1 pypi.org A >/dev/null 2>&1; then bad "direct DNS to 1.1.1.1" "got a reply"; else ok "direct DNS (UDP) to an outside resolver is blocked"; fi
 if g dig +tcp +tries=1 +time=3 @1.1.1.1 pypi.org A >/dev/null 2>&1; then bad "direct DNS over TCP to 1.1.1.1" "got a reply"; else ok "direct DNS (TCP) to an outside resolver is blocked"; fi
 
+echo "Allowlist changes reach the running proxy"
+# The rig's apply, as `devvm allow` would run it.
+apply() { DEVVM_NET="${RIG_NET:-devvmrig0}" DEVVM_SUBNET="${RIG_SUBNET:-10.99.0.0/24}" DEVVM_PROXY_IP="$PROXY_IP" \
+  DEVVM_PROXY_DNS=127.0.0.1:5399 /usr/local/lib/devvm/host-egress.sh >/dev/null 2>&1; }
+started() { systemctl show -p ActiveEnterTimestampMonotonic --value devvm-proxy.service; }
+# hpid: a guest connection that stays open (TLS handshake done, then idle).
+t0="$(started)"; apply
+if [ "$(started)" = "$t0" ]; then ok "re-applying an unchanged list leaves the proxy alone"; else bad "unchanged re-apply" "proxy was restarted"; fi
+g timeout 60 openssl s_client -connect 1.2.3.4:443 -servername pypi.org -quiet < <(sleep 55) >/dev/null 2>&1 & hpid=$!
+sleep 3
+echo example.org >> /etc/devvm/allowlist.local; apply; sleep 1
+if [ "$(started)" = "$t0" ] && kill -0 "$hpid" 2>/dev/null; then ok "adding a host reloads; an open connection survives"; else bad "adding a host" "proxy restarted or the open connection died"; fi
+sed -i '/^example\.org$/d' /etc/devvm/allowlist.local; apply; sleep 2
+if [ "$(started)" != "$t0" ]; then ok "removing a host restarts the proxy"; else bad "removing a host" "proxy was not restarted"; fi
+if kill -0 "$hpid" 2>/dev/null; then bad "removing a host cuts open connections" "the connection is still open"; kill "$hpid" 2>/dev/null; else ok "removing a host cuts open connections"; fi
+expect "the proxy works after the restart"                     200 https://pypi.org/simple/pip/
+if DEVVM_NET=x DEVVM_PROXY_DNS=127.0.0.1:5399 bash -c 'rm -f /usr/local/lib/devvm/.egress-rig; /usr/local/lib/devvm/host-egress.sh' >/dev/null 2>&1; then bad "DEVVM_PROXY_DNS outside the rig" "accepted"; else ok "DEVVM_PROXY_DNS is refused outside the rig"; fi
+touch /usr/local/lib/devvm/.egress-rig
+
 echo "Fails closed"
 systemctl stop devvm-proxy.service
 expect "with the proxy stopped, an allowed host is unreachable" blocked https://pypi.org/simple/pip/

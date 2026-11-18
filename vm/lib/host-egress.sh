@@ -75,7 +75,7 @@ if grep -qE '^cidr:' "$tmp/list"; then
   echo "note: 'cidr:' prefixes in the allowlist are ignored (there is no IP pin to widen any more)" >&2
 fi
 grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$tmp/list" | sed 's/^cidr://' \
-  | tr '[:upper:]' '[:lower:]' | sort -u > "$tmp/domains"
+  | tr '[:upper:]' '[:lower:]' | LC_ALL=C sort -u > "$tmp/domains"
 bad="$(grep -vE '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$' "$tmp/domains" || true)"
 [ -z "$bad" ] || { echo "FATAL: not a plain host name in the allowlist (no inline comments, wildcards or IPs):" >&2; echo "$bad" >&2; exit 1; }
 [ -s "$tmp/domains" ] || { echo "FATAL: the allowlist is empty; refusing to apply" >&2; exit 1; }
@@ -88,6 +88,9 @@ sed -e "s/@PROXY_IP@/$PROXY_IP/g" -e "s#@DOMAINS@#$ETC/allowed-domains#g" \
 # DEVVM_PROXY_DNS=ip:port to pin it to one resolver instead (the test rig does,
 # to feed it names that resolve to private addresses).
 if [ -n "${DEVVM_PROXY_DNS:-}" ]; then
+  # Test rig only: whoever picks the proxy's resolver picks where allowed names
+  # lead, so a real install must never honour this.
+  [ -e "$HERE/.egress-rig" ] || { echo "DEVVM_PROXY_DNS is for the test rig only; refusing" >&2; exit 1; }
   [[ "$DEVVM_PROXY_DNS" =~ ^[0-9.]+:[0-9]+$ ]] || { echo "DEVVM_PROXY_DNS must be ip:port" >&2; exit 1; }
   sed -i "s/^  parse-resolv-conf\$/  nameserver pinned $DEVVM_PROXY_DNS/" "$tmp/haproxy.cfg"
 fi
@@ -95,6 +98,22 @@ install -o root -g root -m 0644 "$tmp/domains" "$ETC/allowed-domains.new"
 sed "s#$ETC/allowed-domains#$ETC/allowed-domains.new#g" "$tmp/haproxy.cfg" > "$tmp/check.cfg"
 haproxy -c -q -f "$tmp/check.cfg" \
   || { rm -f "$ETC/allowed-domains.new"; echo "FATAL: generated proxy config is invalid; keeping the existing one" >&2; exit 1; }
+# What changed decides how the proxy is brought up to date (step 4):
+#   a host was removed, or the config itself changed -> restart. A reload
+#     would leave connections to a just-removed host open for as long as they
+#     stay busy; revoking a host must cut them.
+#   hosts were only added -> reload; established connections carry on.
+#   nothing changed -> leave it alone (every `devvm up` runs this script).
+proxy_action=none
+if ! cmp -s "$tmp/haproxy.cfg" "$ETC/haproxy.cfg" 2>/dev/null; then
+  proxy_action=restart
+elif ! cmp -s "$tmp/domains" "$ETC/allowed-domains"; then
+  if [ -n "$(LC_ALL=C comm -23 <(LC_ALL=C sort -u "$ETC/allowed-domains") "$tmp/domains")" ]; then
+    proxy_action=restart
+  else
+    proxy_action=reload
+  fi
+fi
 mv "$ETC/allowed-domains.new" "$ETC/allowed-domains"
 install -o root -g root -m 0644 "$tmp/haproxy.cfg" "$ETC/haproxy.cfg"
 
@@ -152,11 +171,19 @@ table inet devvm {
 }
 NFT
 
-# 4) (Re)start the dedicated proxy. reload-or-restart keeps established tunnels
-#    alive when it is already running.
+# 4) Bring the dedicated proxy up to date (see proxy_action above).
 systemctl daemon-reload
 systemctl enable devvm-proxy.service >/dev/null 2>&1 || true
-systemctl reload-or-restart devvm-proxy.service \
-  || { echo "FATAL: devvm-proxy failed to start (journalctl -u devvm-proxy). Guest egress is CLOSED until it runs." >&2; exit 1; }
+proxy_fail() { echo "FATAL: devvm-proxy failed to start (journalctl -u devvm-proxy). Guest egress is CLOSED until it runs." >&2; exit 1; }
+if ! systemctl is-active --quiet devvm-proxy.service; then
+  systemctl restart devvm-proxy.service || proxy_fail
+else
+  case "$proxy_action" in
+    restart) systemctl restart devvm-proxy.service || proxy_fail
+             echo "note: proxy restarted (a host was removed or its config changed); open connections from guests were cut" ;;
+    reload)  systemctl reload devvm-proxy.service || proxy_fail ;;
+    none)    : ;;
+  esac
+fi
 
 echo "devvm host egress on $NET ($SUBNET): by-name proxy ($(wc -l < "$ETC/allowed-domains") hosts) + allowlist DNS + default-deny"

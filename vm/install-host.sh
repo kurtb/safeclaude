@@ -26,8 +26,12 @@ rm -f "$DEST/squid.conf" "$DEST/resolve-allowlist.sh"
 
 # The dedicated proxy instance. host-egress.sh writes its config and starts it;
 # it is not started here because the bridge it binds to may not exist yet.
-install -o root -g root -m 0644 "$SRC/proxy/devvm-proxy.service" /etc/systemd/system/devvm-proxy.service
+unit=/etc/systemd/system/devvm-proxy.service
+unit_changed=1; cmp -s "$SRC/proxy/devvm-proxy.service" "$unit" && unit_changed=0
+install -o root -g root -m 0644 "$SRC/proxy/devvm-proxy.service" "$unit"
 systemctl daemon-reload
+# A running proxy keeps its old unit settings until restarted.
+if [ "$unit_changed" = 1 ]; then systemctl try-restart devvm-proxy.service || true; fi
 
 echo "Installed to $DEST (root-owned). The driver runs $DEST/host-egress.sh via sudo."
 echo "Requires: haproxy + nftables. DNS is served by Incus's own dnsmasq (dnsmasq-base)"

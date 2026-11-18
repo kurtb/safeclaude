@@ -99,6 +99,11 @@ claimed solved:
   an allowlisted name on a shared CDN can carry a different Host inside the
   encryption and so reach another tenant of that CDN (`claude.ai`,
   `chatgpt.com`, Cloudflare-fronted hosts).
+- **The host's resolver is trusted.** The proxy connects to whatever public
+  address the host's DNS returns for an allowlisted name; there is no pinned
+  IP list behind it to catch a poisoned answer. Private and metadata addresses
+  are still refused. TLS still protects HTTPS content, since the guest
+  verifies the real certificate.
 - **Subdomain DNS tunneling.** `server=/<zone>/…` resolves any subdomain of an
   allowlisted zone, so a slow DNS tunnel under such a zone is possible.
 - **General-purpose allowlisted hosts** (`github.com`, `sentry.io`,
@@ -189,7 +194,10 @@ devvm allow --refresh                    # re-apply the list, change nothing
   the proxy). Nothing in a guest can reach that file, so an agent can
   tell you which host it needs but cannot allow it itself. The file survives
   `install-host.sh` re-runs.
-- It applies **live**: no VM restart, and it never touches a VM. It is
+- It applies **live**: no VM restart, and it never touches a VM. Adding a host
+  leaves open connections alone. **Removing one restarts the proxy**, which
+  cuts every open connection from every devvm VM (including to the host just
+  removed); clients reconnect. It is
   **machine-wide** — every devvm VM shares the one bridge and the one list.
 - **Exact host names only**, no wildcards: each layer works per name. A pasted
   URL is trimmed to its host.
