@@ -7,10 +7,13 @@ id dev >/dev/null 2>&1 || { echo 'Run guest-setup.sh inside the VM first (missin
 {
   # sshd runs in inetd mode over incus exec, never on a network interface.
   # Mask both forms *before* installation (Noble uses socket activation).
-  systemctl mask ssh.socket ssh.service
   for unit in ssh.socket ssh.service; do
-    if systemctl is-active --quiet "$unit"; then systemctl stop "$unit"; fi
+    if systemctl is-active --quiet "$unit"; then
+      echo "Guest $unit already active. Stop network SSH before enabling Incus-only editor access." >&2
+      exit 1
+    fi
   done
+  systemctl mask ssh.socket ssh.service
   if [ ! -x /usr/sbin/sshd ]; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
