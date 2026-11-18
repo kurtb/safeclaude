@@ -127,7 +127,7 @@ bash ~/workspace/safeclaude/vm/guest-tools.sh agents   # or one group
 | `base` | zsh, fzf, ripgrep, jq, tmux, tree, htop, build-essential, Python venv/pip, shellcheck, hadolint, git-delta, Neovim |
 | `node` | Node.js (via fnm; the current LTS line by default) and Bun |
 | `mise` | [mise](https://mise.jdx.dev), for per-project tool versions (`mise.toml` / `.tool-versions`) |
-| `agents` | Codex, Gemini and Cursor CLIs, plus the `yolo-claude` / `yolo-codex` / `yolo-gemini` / `yolo-cursor` aliases. Also pre-accepts Claude Code's bypass-permissions prompt |
+| `agents` | Codex, Gemini and Cursor CLIs, plus the `yolo-claude` / `yolo-codex` / `yolo-gemini` / `yolo-cursor` aliases. **Turns off Claude Code's one-time bypass-permissions warning** (see below) |
 | `git` | delta as the pager; `user.name` / `user.email` if you pass `GIT_USER_NAME` / `GIT_USER_EMAIL` |
 
 Open a new shell afterwards to pick up `PATH` and the aliases.
@@ -137,7 +137,7 @@ group is how you move:
 
 ```bash
 bash vm/guest-tools.sh node                   # move the default up to the newest LTS
-NODE_VERSION=28 bash vm/guest-tools.sh node   # make a specific line the default
+NODE_VERSION=<major> bash vm/guest-tools.sh node   # make a specific line the default
 fnm install 24 && fnm use 24                  # switch only the current shell
 fnm ls                                        # what's installed
 ```
@@ -155,7 +155,7 @@ Things to know:
   `DEVVM_KEEP_BYPASS_PROMPT=1` to keep the prompt.
 - **It trusts upstream.** It runs the Bun and Cursor installers and fetches the
   latest Neovim, fnm and Codex releases with no checksum check, as the
-  container image does. The egress allowlist limits where code can send data,
+  container image does (hadolint and mise are checksum-verified). The egress allowlist limits where code can send data,
   not what runs inside the VM.
 - **mise fetches tools from wherever they are published.** Its version index
   and the common sources (GitHub releases, `nodejs.org`, `dl.google.com`) are

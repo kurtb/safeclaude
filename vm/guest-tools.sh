@@ -15,7 +15,7 @@
 # IDEMPOTENT: re-run it any time; finished steps are skipped. To upgrade one
 # tool, delete it and re-run. Node is the exception — re-running moves it:
 #   bash guest-tools.sh node                   # newest LTS becomes the default
-#   NODE_VERSION=28 bash guest-tools.sh node   # a specific line becomes the default
+#   NODE_VERSION=<major> bash guest-tools.sh node   # that line becomes the default
 #   fnm install 24 && fnm use 24               # or switch just this shell
 # Globally installed npm tools (gemini) live outside any one Node version, so
 # they survive a switch. Everything it downloads goes through the host
@@ -26,9 +26,9 @@
 # step; this is the comfortable-workstation layer on top.
 #
 # TRUST: like the container image it replaces, this runs upstream installers
-# (bun.sh, cursor.com) and "latest" release binaries (Neovim, fnm, mise, Codex)
-# with no checksum or signature check; only hadolint, which is pinned, is
-# verified against its published checksum. A compromised upstream would run code as
+# (bun.sh, cursor.com) and "latest" release binaries (Neovim, fnm, Codex) with
+# no checksum or signature check; only hadolint and mise are verified against
+# their published checksums (which guards the download, not the publisher). A compromised upstream would run code as
 # `dev`, who has sudo in the guest. The egress allowlist limits where such code
 # could send things, not what it does inside the VM. Don't run this in a VM
 # that holds credentials you wouldn't hand to those vendors.
@@ -206,8 +206,13 @@ group_mise() {
              https://github.com/jdx/mise/releases/latest)"
     tag="${tag##*/}"
     [[ "$tag" =~ ^v[0-9][0-9.]*$ ]] || { echo "FAILED: couldn't resolve the latest mise release (got '$tag')" >&2; exit 1; }
-    fetch "https://github.com/jdx/mise/releases/download/${tag}/mise-${tag}-linux-${A_MISE}" "$TMP/mise"
-    install -m 0755 "$TMP/mise" "$BIN/mise"
+    local f="mise-${tag}-linux-${A_MISE}"
+    fetch "https://github.com/jdx/mise/releases/download/${tag}/${f}" "$TMP/$f"
+    fetch "https://github.com/jdx/mise/releases/download/${tag}/SHASUMS256.txt" "$TMP/mise.sums"
+    # Check just our file's line (the list covers every platform's artifact).
+    (cd "$TMP" && grep -E "[[:space:]]\./${f}\$" mise.sums | sha256sum -c --status) \
+      || { echo "FAILED: mise checksum mismatch — not installing it" >&2; exit 1; }
+    install -m 0755 "$TMP/$f" "$BIN/mise"
   fi
 }
 
@@ -288,4 +293,5 @@ step "Done"
 for t in zsh rg fzf jq tmux nvim delta shellcheck hadolint node npm bun mise claude codex gemini agent; do
   if have "$t"; then printf '  %-11s %s\n' "$t" "$(type -P "$t" || command -v "$t")"; else printf '  %-11s MISSING\n' "$t"; fi
 done
+[ $# -ge 5 ] || echo "(MISSING only means that tool's group hasn't been run in this VM yet.)"
 echo "Open a new shell (or: . $RC) to pick up PATH and the yolo-* aliases."
