@@ -14,14 +14,14 @@ that can be shared.
 | Shared (all OS) | Per-OS driver |
 |---|---|
 | `allowlist.conf` — egress allowlist (domain names) | `drivers/linux-incus.sh` (implemented) |
-| `guest-setup.sh` — guest setup, run by hand inside the VM | `drivers/darwin-lima.sh` (stub) |
+| `guest-setup.sh` — base guest setup, invoked by `devvm upgrade` | `drivers/darwin-lima.sh` (stub) |
 | `test/` — local rig + boundary tests for the egress stack (no Incus needed) | `drivers/windows-wsl2.sh` (stub) |
 | `guest-tools.sh` — optional dev toolbox + agent CLIs, run by hand as `dev` | |
 | `lib/host-egress.sh` + `proxy/haproxy.cfg` — by-name proxy + nftables (DNS is the driver's) | |
 | `devvm.sh` — CLI + OS detection/dispatch | |
 
 ```
-devvm [up|shell|stop|rm] [--name X]
+devvm help
 ```
 
 ## Boundary model (Linux driver)
@@ -71,14 +71,12 @@ it connected to: `journalctl -u devvm-proxy`.
 
 Clone-only: `devvm` reads the current folder's git remote and the guest clones it
 into `/home/dev/workspace`; nothing is mounted from the host. Edit the clone
-in-guest with `devvm shell` (or move files with `incus file`). *(VS Code
-Remote-SSH is a planned follow-up — the cloud image ships no SSH server or host
-key yet.)*
+in-guest with `devvm shell`, connect VS Code Remote-SSH with `devvm ssh-config`, or transfer a single file with `devvm cp`. See the [editor setup](QUICKSTART.md#edit-from-the-host).
 
 **The guest is a fresh dev machine.** A new VM boots **bare** — nothing is
-installed at boot, and `devvm` drops you into a root shell. You set it up by
-hand: clone this repo inside the VM and run [`guest-setup.sh`](guest-setup.sh)
-as root (see [`QUICKSTART.md`](QUICKSTART.md)). It runs in the foreground and
+installed at boot, and `devvm` drops you into a root shell. Exit and run
+`devvm upgrade` on the host to apply [`guest-setup.sh`](guest-setup.sh)
+inside the VM (see [`QUICKSTART.md`](QUICKSTART.md)). It runs in the foreground and
 installs only what every project needs (git, `gh`, Docker, Claude Code) and
 creates the unprivileged **`dev`** user (in the `docker` group, with passwordless
 `sudo`). It is idempotent, so re-run it if a step fails. After that `devvm shell`
@@ -90,8 +88,8 @@ toolchain is the project's job — give the repo a bootstrap command.
 
 **devvm never handles credentials.** Once setup has run, a public repo is cloned
 for you. For a private one the clone is skipped (not fatal): inside the VM run
-`gh auth login --with-token` with a token scoped to what *that VM* should be
-able to do, then `gh auth setup-git` and `git clone`. Same for `claude login`.
+`gh-auth-setup` with a token scoped to what *that VM* should be able to do,
+then `git clone`. Run `claude login` inside the VM as well.
 
 ## Known limitations (accepted — same posture as the container)
 
@@ -131,7 +129,7 @@ differed from its own — which for round-robin names such as `github.com` was
 most of them. Neither can be configured away in Squid's intercept mode.
 
 **Validated in the local rig** ([`test/egress-rig.sh`](test/egress-rig.sh)): the
-real `install-host.sh`, `host-egress.sh` and `haproxy.cfg`, with a network
+shared `host/install-egress.sh` installer, `host-egress.sh` and `haproxy.cfg`, with a network
 namespace standing in for the guest. [`test/egress-test.sh`](test/egress-test.sh)
 checks 25 things a guest must or must not be able to do, including:
 
@@ -150,21 +148,33 @@ Run `vm/test/project-isolation.sh VM_A VM_B` against two running project VMs aft
 
 ### Host setup (prerequisites)
 
-0. Install **`haproxy`** (2.8 or newer, which Ubuntu 24.04 ships; older
-   versions are untested and refused) and **`nftables`**, plus Incus (`incus admin init`).
-   Incus pulls in `dnsmasq-base` and runs its own dnsmasq on the managed bridge.
-   Squid is no longer used.
+0. Follow the [host prerequisites](QUICKSTART.md#phase-0--host-prerequisites-one-time) for Incus 7.5.1+, HAProxy 2.8+ and the DNS and firewall tools. Refresh APT indexes and run `./install-host.sh --check` from this directory.
 1. `sudo ./install-host.sh` — installs the egress enforcement root-owned to
    `/usr/local/lib/devvm` (the driver runs that copy, never the checkout) and
    the dedicated proxy and firewall units. Incus requires `devvm-firewall.service`
-   to restore the last applied rules before the daemon starts.
+   to restore the last applied rules before the daemon starts. The installer puts `devvm` on PATH. If you previously sourced `devvm.sh`, remove that line from your shell startup and open a new shell.
 2. Ensure your shell is in the `incus-admin` group (`newgrp incus-admin` or
    re-login) so `devvm` can talk to the Incus socket.
 
-### Still to verify (non-egress)
+### Lifecycle
 
-- Host nested virt on (`kvm_intel/amd nested=1`) for minikube `kvm2`, then
-  `minikube start --driver=docker` inside the guest.
+Run these from the project's directory, or pass the same `--name PROJECT` on each invocation.
+
+| Command | Effect |
+|---|---|
+| `devvm list` | List project VMs and their state. |
+| `devvm upgrade` | Start an existing VM if needed and update its base setup, Docker and Claude Code. |
+| `devvm snapshot LABEL` | Save the project VM's disk. A snapshot can include guest credentials. |
+| `devvm restore LABEL` | Replace the disk with that snapshot. A running VM reboots. Its current network and sizing are preserved. |
+| `devvm doctor` | Check host enforcement, DNS and HTTPS from the guest. Set `DEVVM_CHECKOUT` to the SafeClaude checkout to compare the source and installed allowlists. |
+| `devvm help` | Show all commands. |
+
+New VMs default to 4 CPUs, 8 GiB of RAM and a 40 GiB root disk. For example,
+`DEVVM_CPUS=2 DEVVM_MEMORY=4GiB DEVVM_DISK=20GiB devvm up` sets the size at creation.
+
+### Cloud and cluster tools
+
+The [optional cloud installer](QUICKSTART.md#optional-cloud-tools) adds gcloud, Pulumi, kubectl, Helm and minikube. The Docker driver runs inside the project VM.
 
 ## Guest toolbox
 
@@ -173,10 +183,11 @@ Code and the `dev` user. `guest-tools.sh` (as `dev`, optional) adds what the
 container image bakes in — shell tools, compilers, Python, Node (current LTS,
 switchable), Bun, mise, linters, Neovim, the Codex/Gemini/Cursor CLIs and the
 `yolo-*` aliases — in five groups (`base`, `node`, `mise`, `agents`, `git`).
-Both are idempotent and are run by hand inside the VM; see
+Both are idempotent. Apply the base setup with `devvm upgrade`. Run the optional groups by hand inside the VM. See
 [QUICKSTART.md](QUICKSTART.md). Everything `guest-tools.sh`
 downloads is on `allowlist.conf`, which also carries the two hosts mise itself
 needs (`mise-versions.jdx.dev`, `tuf-repo-cdn.sigstore.dev`).
+The [personal setup guide](PERSONAL.md) covers optional dotfiles, gstack and guest-local authentication.
 
 ## Adding hosts
 
@@ -199,7 +210,7 @@ devvm allow --refresh                    # re-apply the list, change nothing
   leaves open connections alone. **Removing one restarts the proxy**, which
   cuts every open connection from every devvm VM (including to the host just
   removed); clients reconnect. It is
-  **machine-wide** — every devvm VM shares the one bridge and the one list.
+  **machine-wide** across all project bridges.
 - **Exact host names only**, no wildcards: each layer works per name. A pasted
   URL is trimmed to its host.
 - A download often needs a *second* host — the one it redirects to (a blob CDN,
