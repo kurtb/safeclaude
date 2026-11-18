@@ -34,16 +34,7 @@ jobs:
         run: sudo test -c /dev/kvm && ls -l /dev/kvm
       - name: Install current stable Incus and devvm
         run: |
-          # GitHub uses a mirror+file URI. python-apt cannot report its site
-          # for package provenance. Select the runner's signed Ubuntu mirror.
-          sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|http://azure.archive.ubuntu.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
-          # The hosted image grants the runner write access to local tool dirs.
-          # Give the privileged installer dedicated root-owned parent paths.
-          sudo chown root:root /usr/local /usr/local/lib /usr/local/bin
-          sudo chmod go-w /usr/local /usr/local/lib /usr/local/bin
-          git archive --format=tar.gz --prefix=devvm/ HEAD:vm | tar -xz -C "$RUNNER_TEMP"
-          sudo "$RUNNER_TEMP/devvm/install-host.sh"
-          sudo "$RUNNER_TEMP/devvm/install-host.sh" --check
+          ci/install-on-runner.sh
           sudo incus admin init --minimal
       - name: Exercise installed CLI and guest
         env:
