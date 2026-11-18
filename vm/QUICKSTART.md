@@ -179,6 +179,29 @@ settings, the proxy is still using the old resolver: on the host, run
 
 Run `devvm ssh-config` in the project directory after guest setup. It prints an OpenSSH host entry with a dedicated identity and a pinned guest host key. Save it in a per-project SSH config fragment and include that file from `~/.ssh/config` before any `Host *` defaults. Connect with VS Code Remote-SSH using the printed host name. Set `remote.SSH.localServerDownload` to `always` for host-side VS Code Server downloads. SSH runs over the local Incus socket. The guest needs no network SSH listener.
 
+### VS Code settings for devvm hosts
+
+This applies only if you connect with VS Code Remote-SSH. `devvm shell` and `devvm cp` don't need it.
+
+Remote-SSH runs the VS Code server inside the guest, so code in the VM can talk to your host VS Code. By default, VS Code answers guest Git requests with your host GitHub sign-in and forwards guest ports to your host `localhost`. Don't rely on a VS Code profile to keep accounts apart: signed-in accounts can be shared between profiles. Instead, run a separate VS Code instance with its own user data directory for devvm hosts, install the Remote-SSH extension in it, and don't sign in to GitHub or any other account there:
+
+```bash
+code --user-data-dir ~/.config/devvm-vscode --extensions-dir ~/.config/devvm-vscode/extensions
+```
+
+In that instance, check that the **Accounts** menu lists no accounts. Decline any sign-in prompt while you're connected to a VM. Set these values in its user settings (Command Palette, then **Preferences: Open User Settings (JSON)**, which opens `~/.config/devvm-vscode/User/settings.json`):
+
+```jsonc
+{
+  "remote.autoForwardPorts": false,
+  "git.terminalAuthentication": false,
+  "github.gitAuthentication": false,
+  "git.useIntegratedAskPass": false
+}
+```
+
+Set them on the host, not in Remote settings, because the guest controls the remote machine's settings. Leave `remote.SSH.remoteServerListenOnSocket` off; the guest refuses Unix-socket forwarding. `devvm doctor` prints an advisory line about these values. It never fails on them, and it can't tell which instance or profile a connection uses or which accounts are signed in. Only the instance you actually connect from counts. In a guest terminal, `GIT_ASKPASS` and `VSCODE_GIT_IPC_HANDLE` should be unset. Forward a guest port only when you started it yourself, and close it in the **Ports** view when you are done. After updating devvm, rerun `devvm ssh-config` so a running VM gets the current guest SSH settings.
+
 For one file, use `devvm cp push HOST_FILE /absolute/guest/path` or `devvm cp pull /absolute/guest/path HOST_FILE`. Choose a new destination path. Both commands work without configuring SSH.
 
 ## Optional cloud tools

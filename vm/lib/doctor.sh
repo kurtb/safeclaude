@@ -76,6 +76,30 @@ check_proxy_config() {
     cmp -s /etc/devvm/haproxy.cfg -
 }
 
+# Advisory only: VS Code user data does not show that Remote-SSH is in use,
+# so this never fails doctor. Remote-SSH gives guest code a channel to the
+# host VS Code client; report the host settings that hand it Git credentials
+# or forward its ports.
+check_vscode_settings() {
+  local base="${XDG_CONFIG_HOME:-$HOME/.config}" app report
+  local -a dirs=()
+  for app in Code 'Code - Insiders' devvm-vscode; do
+    [ -d "$base/$app/User" ] && dirs+=("$base/$app/User")
+  done
+  if [ "${#dirs[@]}" = 0 ]; then
+    echo 'SKIP  host VS Code Remote-SSH settings (advisory; no VS Code user data found)'
+    return 0
+  fi
+  if report="$(/usr/bin/python3 -IB "$VMDIR/lib/host-vscode-settings.py" "${dirs[@]}" 2>&1)"; then
+    echo 'INFO  host VS Code Remote-SSH settings (advisory): a profile sets the required values'
+  else
+    echo 'WARN  host VS Code Remote-SSH settings (advisory): no profile sets the required values'
+  fi
+  printf '%s\n' "$report"
+  echo '      Applies only to Remote-SSH. Doctor cannot tell which profile a connection uses or which accounts are signed in.'
+  echo '      See QUICKSTART.md, "VS Code settings for devvm hosts".'
+}
+
 cmd_doctor() {
   local name="$1" failed=0 installed=/usr/local/lib/devvm/allowlist.conf checkout="$VMDIR/allowlist.conf"
   local net expected_dns actual_dns expected_domains file
@@ -92,6 +116,7 @@ cmd_doctor() {
   for file in haproxy.cfg bogons allowed-domains; do
     doctor_check "$file matches the last successful proxy apply" cmp -s "/etc/devvm/$file" "/run/devvm-proxy-applied/$file"
   done
+  check_vscode_settings
   net="$(incus config device get "$name" eth0 network)" || return 1
   case "$net" in
     devvmbr0|"dvmp-${name##*-}") ;;

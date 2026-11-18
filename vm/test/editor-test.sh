@@ -23,7 +23,9 @@ ssh-keygen -q -t ed25519 -N '' -f "$tmp/unrelated"
 printf '%s %s\n' "$name" "$(cat "$tmp/unrelated.pub")" > "$tmp/wrong-pin"
 must_fail ssh_vm -o "UserKnownHostsFile=$tmp/wrong-pin" -T -n
 must_fail ssh_vm -o ExitOnForwardFailure=yes -R 0:127.0.0.1:22 -T -n
-echo 'PASS: SSH as dev, no agent or TCP/22 listener, wrong pin and reverse forward refused'
+incus exec "$name" -- /usr/sbin/sshd -T -f /etc/ssh/devvm_sshd_config -C user=dev |
+  grep -Fx 'allowstreamlocalforwarding no' >/dev/null
+echo 'PASS: SSH as dev, no agent or TCP/22 listener, wrong pin, reverse and socket forwards refused'
 
 guest="$(incus exec "$name" -- su -s /bin/sh dev -c 'mktemp -d /tmp/devvm-editor.XXXXXXXX')"
 [[ "$guest" =~ ^/tmp/devvm-editor\.[a-zA-Z0-9]+$ ]]

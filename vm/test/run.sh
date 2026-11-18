@@ -10,6 +10,7 @@ while IFS= read -r -d '' script; do
 done < <(find "$vm" -type f -print0)
 "/usr/bin/python3" -B "$vm/test/host-packages-test.py"
 python3 -B "$vm/test/guest-personal-test.py"
+python3 -B "$vm/test/host-vscode-settings-test.py"
 "$vm/test/guest-doctor-test.sh"
 
 LC_ALL=C awk -F. '

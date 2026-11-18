@@ -90,6 +90,10 @@ toolchain is the project's job — give the repo a bootstrap command.
 for you. For a private one the clone is skipped (not fatal): inside the VM run
 `gh-auth-setup` with a token scoped to what *that VM* should be able to do,
 then `git clone`. Run `claude login` inside the VM as well.
+VS Code Remote-SSH is the exception you control: the host VS Code client can
+pass its own GitHub sign-in and port forwards to the guest. Connect from a
+separate VS Code user data directory with no accounts signed in and the
+[settings in the editor setup](QUICKSTART.md#vs-code-settings-for-devvm-hosts).
 
 ## Known limitations
 
@@ -172,7 +176,7 @@ Run these from the project's directory, or pass the same `--name PROJECT` on eac
 | `devvm upgrade` | Start an existing VM if needed and update its base setup, Docker and Claude Code. |
 | `devvm snapshot LABEL` | Save the project VM's disk. A snapshot can include guest credentials. |
 | `devvm restore LABEL` | Replace the disk with that snapshot. A running VM reboots. Its current network and sizing are preserved. |
-| `devvm doctor` | Check host enforcement, DNS and HTTPS from the guest. Set `DEVVM_CHECKOUT` to the SafeClaude checkout to compare the source and installed allowlists. |
+| `devvm doctor` | Check host enforcement, DNS and HTTPS from the guest, with an advisory (never failing) note on host VS Code Remote-SSH settings. Set `DEVVM_CHECKOUT` to the SafeClaude checkout to compare the source and installed allowlists. |
 | `devvm help` | Show all commands. |
 
 New VMs default to 4 CPUs, 8 GiB of RAM and a 40 GiB root disk. For example,

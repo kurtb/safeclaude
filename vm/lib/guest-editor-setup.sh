@@ -40,7 +40,7 @@ AllowAgentForwarding no
 X11Forwarding no
 AllowTcpForwarding local
 PermitOpen localhost:* 127.0.0.1:* [::1]:*
-AllowStreamLocalForwarding local
+AllowStreamLocalForwarding no
 PermitTunnel no
 Subsystem sftp internal-sftp
 CONFIG
