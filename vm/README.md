@@ -41,8 +41,11 @@ others don't:
      `curl --resolve <allowed-name>:443:<evil-ip>` reaches the real
      `<allowed-name>` or nothing.
    - A name that resolves to a loopback, private, link-local (cloud metadata
-     `169.254.169.254`), CGNAT or multicast address is refused, so an
-     allowlisted name can't be turned on the host or the LAN.
+     `169.254.169.254`), CGNAT or multicast address is refused
+     ([`proxy/bogons.lst`](proxy/bogons.lst)), so an allowlisted name can't be
+     turned on the host or the LAN.
+   - The proxy connects over **IPv4 only**. A name with only IPv6 addresses is
+     refused, so there is no second, IPv6 list of private ranges to get wrong.
    - There is **no list of allowed IPs**. Addresses are looked up per
      connection, so rotating CDN addresses need no refresh.
 3. **`input` chain** — the guest can reach only DHCP/DNS/the proxy on the bridge
@@ -141,7 +144,8 @@ run Phase 3 of the [QUICKSTART](QUICKSTART.md) after upgrading.
 
 ### Host setup (prerequisites)
 
-0. Install **`haproxy`** and **`nftables`**, plus Incus (`incus admin init`).
+0. Install **`haproxy`** (2.2 or newer; tested on 2.8, which Ubuntu 24.04
+   ships) and **`nftables`**, plus Incus (`incus admin init`).
    Incus pulls in `dnsmasq-base` and runs its own dnsmasq on the managed bridge.
    Squid is no longer used.
 1. `sudo ./install-host.sh` — installs the egress enforcement root-owned to

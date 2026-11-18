@@ -7,12 +7,14 @@
 #   sudo vm/test/egress-test.sh --down    # ...and tears it down afterwards
 #
 # Needs real network access to a few allowlisted hosts (pypi.org,
-# registry.npmjs.org, api.github.com, archive.ubuntu.com).
+# registry.npmjs.org, api.github.com, archive.ubuntu.com), plus dig and python3,
+# and port 80 free on this machine's loopback.
 set -uo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root: sudo $0" >&2; exit 1; }
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RIG="$HERE/egress-rig.sh"
 PROXY_IP="${RIG_PROXY_IP:-10.99.0.1}"
+V6="${RIG_V6:-fd00:99::1}"
 
 "$RIG" up >/dev/null || { echo "rig failed to come up" >&2; exit 1; }
 g() { "$RIG" run "$@"; }                     # run as the guest
@@ -52,6 +54,14 @@ expect "non-allowlisted SNI aimed at an allowed host's IP"     blocked --resolve
 expect "TLS with no SNI"                                       blocked -k https://151.101.64.223/
 expect "plain HTTP sent to port 443"                           blocked http://151.101.64.223:443/
 expect "HTTP with a non-allowlisted Host"                      403 -H 'Host: example.com' http://archive.ubuntu.com/
+# Raw requests: curl folds repeated Host headers into one, so it can't send these.
+raw() { g python3 -c 'import socket,sys
+s=socket.create_connection(("1.2.3.4",80),timeout=8); s.sendall(sys.argv[1].encode()); print(s.recv(64).split()[1].decode())' "$1" 2>/dev/null; }
+expect_raw() { local got; got="$(raw "$3")"; if [ "${got:-000}" = "$2" ]; then ok "$1"; else bad "$1" "expected HTTP $2, got ${got:-000}"; fi; }
+expect_raw "two Host headers, allowed then not"                400 $'GET / HTTP/1.1\r\nHost: archive.ubuntu.com\r\nHost: example.com\r\nConnection: close\r\n\r\n'
+expect_raw "two Host headers, not allowed then allowed"        400 $'GET / HTTP/1.1\r\nHost: example.com\r\nHost: archive.ubuntu.com\r\nConnection: close\r\n\r\n'
+expect_raw "request line naming a different host than Host"    400 $'GET http://example.com/ HTTP/1.1\r\nHost: archive.ubuntu.com\r\nConnection: close\r\n\r\n'
+expect_raw "no Host header"                                    400 $'GET / HTTP/1.1\r\nConnection: close\r\n\r\n'
 expect "using the HTTP port as a CONNECT proxy"                blocked -p -x http://archive.ubuntu.com:80 https://example.com/
 
 echo "An allowlisted name cannot be used to reach private addresses (SSRF)"
@@ -59,14 +69,19 @@ echo "An allowlisted name cannot be used to reach private addresses (SSRF)"
 # name's private address, the canary would be hit.
 canary="$(mktemp -d)"; echo canary > "$canary/index.html"
 ( cd "$canary" && exec python3 -m http.server 80 --bind 127.0.0.1 >"$canary/log" 2>&1 ) & cpid=$!
+( cd "$canary" && exec python3 -m http.server 80 --bind "$V6" >"$canary/log6" 2>&1 ) & cpid6=$!
 sleep 1
+if kill -0 "$cpid" 2>/dev/null && kill -0 "$cpid6" 2>/dev/null; then ok "canary web servers started on host loopback (IPv4 and a private IPv6)"
+else bad "canary web servers started" "port 80 on host loopback is in use; the canary check below proves nothing"; fi
 expect "HTTP name resolving to loopback"                       403 --resolve ssrf-loopback.test:80:1.2.3.4 http://ssrf-loopback.test/
 expect "HTTP name resolving to the bridge IP"                  403 --resolve ssrf-bridge.test:80:1.2.3.4 http://ssrf-bridge.test/
 expect "HTTP name resolving to the metadata IP"                403 --resolve ssrf-metadata.test:80:1.2.3.4 http://ssrf-metadata.test/
 expect "HTTPS name resolving to loopback"                      blocked --resolve ssrf-loopback.test:443:1.2.3.4 https://ssrf-loopback.test/
 expect "HTTPS name resolving to the metadata IP"               blocked --resolve ssrf-metadata.test:443:1.2.3.4 https://ssrf-metadata.test/
-kill "$cpid" 2>/dev/null
-if grep -q '"GET' "$canary/log" 2>/dev/null; then bad "canary on host loopback was never contacted" "it received a request"; else ok "canary on host loopback was never contacted"; fi
+expect "HTTP name with only a (private) IPv6 address"         403 --resolve ssrf-v6.test:80:1.2.3.4 http://ssrf-v6.test/
+expect "HTTPS name with only a (private) IPv6 address"        blocked --resolve ssrf-v6.test:443:1.2.3.4 https://ssrf-v6.test/
+kill "$cpid" "$cpid6" 2>/dev/null
+if grep -q '"GET' "$canary/log" "$canary/log6" 2>/dev/null; then bad "canary on host loopback was never contacted" "it received a request"; else ok "canary on host loopback was never contacted"; fi
 rm -rf "$canary"
 
 echo "Nothing but web traffic leaves, and the host is not reachable"
@@ -74,7 +89,11 @@ tcp() { g timeout 5 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null; }
 if tcp 140.82.112.3 22;   then bad "SSH (port 22) to the internet" "connected"; else ok "SSH (port 22) to the internet is blocked"; fi
 if tcp 151.101.64.223 8443; then bad "port 8443 to the internet" "connected"; else ok "other ports to the internet are blocked"; fi
 if tcp "$PROXY_IP" 22;    then bad "host SSH via the bridge IP" "connected"; else ok "host services on the bridge IP are blocked"; fi
-if g timeout 4 bash -c "exec 3<>/dev/udp/1.1.1.1/53; printf 'x' >&3; read -t 2 -n1 <&3" 2>/dev/null; then bad "direct DNS to 1.1.1.1" "got a reply"; else ok "direct DNS to an outside resolver is blocked"; fi
+# A real query both times: the first shows the guest's dig works at all, so
+# the second failing means the path is blocked, not that the probe is broken.
+if [ -n "$(g dig +short +tries=1 +time=3 @"$PROXY_IP" pypi.org A 2>/dev/null)" ]; then ok "DNS through the allowlist resolver answers"; else bad "DNS through the allowlist resolver" "no answer"; fi
+if g dig +tries=1 +time=3 @1.1.1.1 pypi.org A >/dev/null 2>&1; then bad "direct DNS to 1.1.1.1" "got a reply"; else ok "direct DNS (UDP) to an outside resolver is blocked"; fi
+if g dig +tcp +tries=1 +time=3 @1.1.1.1 pypi.org A >/dev/null 2>&1; then bad "direct DNS over TCP to 1.1.1.1" "got a reply"; else ok "direct DNS (TCP) to an outside resolver is blocked"; fi
 
 echo "Fails closed"
 systemctl stop devvm-proxy.service

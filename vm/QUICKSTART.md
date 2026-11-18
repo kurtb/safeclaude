@@ -17,7 +17,7 @@ cat /sys/module/kvm_intel/parameters/nested 2>/dev/null \
 #   If it's N: echo "options kvm_intel nested=1" | sudo tee /etc/modprobe.d/kvm.conf
 #   then: sudo modprobe -r kvm_intel && sudo modprobe kvm_intel   (AMD: kvm_amd)
 
-# 0b. Install Incus + the egress tooling.
+# 0b. Install Incus + the egress tooling (HAProxy 2.2 or newer; 24.04 ships 2.8).
 sudo apt update
 sudo apt install -y incus haproxy dnsmasq-base nftables curl git
 sudo incus admin init --minimal                 # accept the minimal defaults

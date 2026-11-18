@@ -18,7 +18,8 @@
 # Uses its own names/subnet so it can't collide with a real devvm bridge.
 # Needs: haproxy nftables dnsmasq-base iproute2 curl (and systemd, for the
 # devvm-proxy unit). It installs the egress files to /usr/local/lib/devvm and
-# /etc/devvm like a real host, so don't run it ON a real devvm host.
+# /etc/devvm like a real host, so it REFUSES to run on a machine that already
+# has a devvm install it didn't make (it would overwrite and then remove it).
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root: sudo $0 $*" >&2; exit 1; }
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; VM="$(dirname "$HERE")"
@@ -27,15 +28,28 @@ export DEVVM_NET="${RIG_NET:-devvmrig0}"
 export DEVVM_SUBNET="${RIG_SUBNET:-10.99.0.0/24}"
 export DEVVM_PROXY_IP="${RIG_PROXY_IP:-10.99.0.1}"
 GUEST_IP="${RIG_GUEST_IP:-10.99.0.2}"
+RIG_V6="${RIG_V6:-fd00:99::1}"
 NS=devvmrig
 RUN=/run/devvm-rig
+MARK=/usr/local/lib/devvm/.egress-rig     # "this install belongs to the rig"
 # Where the rig's dnsmasq forwards allowlisted names. Production uses 1.1.1.1;
 # inside a devvm guest only the outer resolver is reachable, so default to
 # whatever this machine resolves through.
 UPSTREAM="${RIG_DNS_UPSTREAM:-$(awk '/^nameserver/{print $2; exit}' /run/systemd/resolve/resolv.conf 2>/dev/null || true)}"
 UPSTREAM="${UPSTREAM:-1.1.1.1}"
 
+# True when this machine has a devvm install that the rig did not create.
+real_install() {
+  [ ! -e "$MARK" ] && { [ -e /usr/local/lib/devvm ] || [ -e /etc/devvm ] \
+    || [ -e /etc/systemd/system/devvm-proxy.service ] \
+    || nft list table inet devvm >/dev/null 2>&1; }
+}
+
 down() {
+  if real_install; then
+    echo "refusing: this machine has a devvm install the rig did not create; not touching it" >&2
+    exit 1
+  fi
   if [ -f "$RUN/dnsmasq.pid" ]; then kill "$(cat "$RUN/dnsmasq.pid")" 2>/dev/null || true; fi
   if [ -f "$RUN/proxydns.pid" ]; then kill "$(cat "$RUN/proxydns.pid")" 2>/dev/null || true; fi
   if [ -e "$RUN/made-local" ]; then rm -f /etc/devvm/allowlist.local; fi
@@ -50,12 +64,21 @@ down() {
 }
 
 up() {
+  if real_install; then
+    echo "refusing: this machine already has a devvm install (/usr/local/lib/devvm, /etc/devvm," >&2
+    echo "devvm-proxy.service or the 'inet devvm' nft table). The rig would replace it." >&2
+    exit 1
+  fi
+  install -d -o root -g root -m 0755 /usr/local/lib/devvm; touch "$MARK"
   mkdir -p "$RUN" "/etc/netns/$NS"
   # Bridge + "guest" namespace.
   if ! ip link show "$DEVVM_NET" >/dev/null 2>&1; then
     ip link add "$DEVVM_NET" type bridge
     ip addr add "$DEVVM_PROXY_IP/24" dev "$DEVVM_NET"
     ip link set "$DEVVM_NET" up
+    # A private IPv6 address on the host, for the "name with only an IPv6
+    # answer" test (see ssrf-v6.test below).
+    ip -6 addr add "$RIG_V6/64" dev "$DEVVM_NET" nodad
   fi
   if ! ip netns list | grep -qw "$NS"; then
     ip netns add "$NS"
@@ -86,7 +109,7 @@ up() {
     --listen-address="$DEVVM_PROXY_IP" --no-hosts --no-dhcp-interface="$DEVVM_NET"
 
   # The proxy's resolver: a second dnsmasq that forwards everything upstream
-  # but answers three test names with addresses the proxy must REFUSE to
+  # but answers four test names with addresses the proxy must REFUSE to
   # connect to. They are put on the allowlist (below) so that the only thing
   # standing between the guest and those addresses is the proxy's bogon check.
   if [ -f "$RUN/proxydns.pid" ]; then kill "$(cat "$RUN/proxydns.pid")" 2>/dev/null || true; fi
@@ -94,11 +117,12 @@ up() {
     --listen-address=127.0.0.1 --port=5399 --bind-interfaces --cache-size=0 \
     --address=/ssrf-loopback.test/127.0.0.1 \
     --address=/ssrf-bridge.test/"$DEVVM_PROXY_IP" \
-    --address=/ssrf-metadata.test/169.254.169.254
+    --address=/ssrf-metadata.test/169.254.169.254 \
+    --address=/ssrf-v6.test/"$RIG_V6"
   install -d -o root -g root -m 0755 /etc/devvm
   if [ ! -e /etc/devvm/allowlist.local ]; then touch "$RUN/made-local"; fi
   if [ -e "$RUN/made-local" ]; then
-    printf '%s\n' ssrf-loopback.test ssrf-bridge.test ssrf-metadata.test > /etc/devvm/allowlist.local
+    printf '%s\n' ssrf-loopback.test ssrf-bridge.test ssrf-metadata.test ssrf-v6.test > /etc/devvm/allowlist.local
     chmod 0644 /etc/devvm/allowlist.local
   fi
 

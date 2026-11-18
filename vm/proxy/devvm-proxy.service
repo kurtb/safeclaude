@@ -8,10 +8,20 @@ Wants=network-online.target
 [Service]
 Type=notify
 ExecStartPre=/usr/sbin/haproxy -c -q -f /etc/devvm/haproxy.cfg
-ExecStart=/usr/sbin/haproxy -Ws -f /etc/devvm/haproxy.cfg -p /run/devvm-proxy.pid
+ExecStart=/usr/sbin/haproxy -Ws -f /etc/devvm/haproxy.cfg
 ExecReload=/usr/sbin/haproxy -c -q -f /etc/devvm/haproxy.cfg
 ExecReload=/bin/kill -USR2 $MAINPID
 KillMode=mixed
+# It only reads its config and talks to the network.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 # The bridge IP it binds may not exist yet at boot; keep trying.
 Restart=on-failure
 RestartSec=5

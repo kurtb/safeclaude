@@ -36,19 +36,24 @@ ETC=/etc/devvm
 # Config lives alongside this script in the root-owned install dir. No checkout
 # fallback — require the installed copy, and verify each file is root-owned and
 # not group/world-writable (anti-tamper).
-CONF="$HERE/allowlist.conf"; PROXYCONF="$HERE/haproxy.cfg"
+CONF="$HERE/allowlist.conf"; PROXYCONF="$HERE/haproxy.cfg"; BOGONS="$HERE/bogons.lst"
 check_owned() {
   local o p
   o="$(stat -c '%U' "$1")"; p="$(stat -c '%a' "$1")"
   { [ "$o" = root ] && [ $((8#$p & 8#022)) -eq 0 ]; } \
     || { echo "refusing: $1 must be root-owned and not group/world-writable" >&2; exit 1; }
 }
-for f in "$HERE" "$CONF" "$PROXYCONF"; do
+for f in "$HERE" "$CONF" "$PROXYCONF" "$BOGONS"; do
   [ -e "$f" ] || { echo "missing $f — run install-host.sh" >&2; exit 1; }
   check_owned "$f"
 done
 command -v haproxy >/dev/null || { echo "haproxy is not installed (apt install haproxy)" >&2; exit 1; }
 [ -e /etc/systemd/system/devvm-proxy.service ] || { echo "devvm-proxy.service missing — run install-host.sh" >&2; exit 1; }
+
+# One apply at a time, machine-wide: every project's `devvm up` and every
+# `devvm allow` runs this script against the same files, table and proxy.
+exec 9>/run/devvm-egress.lock
+flock -w 120 9 || { echo "another devvm egress apply is still running (waited 120s)" >&2; exit 1; }
 
 # Effective allowlist = the installed base list + this host's own extras
 # (`devvm allow`). The extras file lives outside the install dir so re-running
@@ -66,6 +71,9 @@ fi
 # One exact host name per line. A legacy `cidr:` prefix (it used to widen the IP
 # pin) is accepted and ignored. Anything that isn't a plain host name is fatal:
 # this file is matched verbatim by the proxy, so never let junk through.
+if grep -qE '^cidr:' "$tmp/list"; then
+  echo "note: 'cidr:' prefixes in the allowlist are ignored (there is no IP pin to widen any more)" >&2
+fi
 grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$tmp/list" | sed 's/^cidr://' \
   | tr '[:upper:]' '[:lower:]' | sort -u > "$tmp/domains"
 bad="$(grep -vE '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$' "$tmp/domains" || true)"
@@ -74,7 +82,8 @@ bad="$(grep -vE '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-
 
 # 1) Proxy config. Validate the new config BEFORE installing it, so a bad edit
 #    leaves the running proxy and its rules untouched.
-sed -e "s/@PROXY_IP@/$PROXY_IP/g" -e "s#@DOMAINS@#$ETC/allowed-domains#g" "$PROXYCONF" > "$tmp/haproxy.cfg"
+sed -e "s/@PROXY_IP@/$PROXY_IP/g" -e "s#@DOMAINS@#$ETC/allowed-domains#g" \
+    -e "s#@BOGONS@#$BOGONS#g" "$PROXYCONF" > "$tmp/haproxy.cfg"
 # By default the proxy resolves through the host's /etc/resolv.conf. Set
 # DEVVM_PROXY_DNS=ip:port to pin it to one resolver instead (the test rig does,
 # to feed it names that resolve to private addresses).

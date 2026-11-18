@@ -9,12 +9,18 @@ DEST=/usr/local/lib/devvm
 [ "$(id -u)" = 0 ] || { echo "run as root: sudo $0" >&2; exit 1; }
 command -v haproxy >/dev/null \
   || { echo "haproxy is not installed. Install it first:  apt install haproxy" >&2; exit 1; }
+# The proxy config uses do-resolve and address matching on variables.
+hv="$(haproxy -v | sed -n '1s/^HAProxy version \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')"
+read -r hmaj hmin <<<"${hv:-0 0}"
+{ [ "$hmaj" -gt 2 ] || { [ "$hmaj" -eq 2 ] && [ "$hmin" -ge 2 ]; }; } \
+  || { echo "haproxy 2.2 or newer is required (found: $(haproxy -v | head -1))" >&2; exit 1; }
 
 install -d -o root -g root -m 0755 "$DEST"
 # Flatten the files host-egress.sh needs into one root-owned dir.
 install -o root -g root -m 0755 "$SRC/lib/host-egress.sh"   "$DEST/host-egress.sh"
 install -o root -g root -m 0644 "$SRC/allowlist.conf"       "$DEST/allowlist.conf"
 install -o root -g root -m 0644 "$SRC/proxy/haproxy.cfg"    "$DEST/haproxy.cfg"
+install -o root -g root -m 0644 "$SRC/proxy/bogons.lst"     "$DEST/bogons.lst"
 # Files from the Squid-based design, no longer used.
 rm -f "$DEST/squid.conf" "$DEST/resolve-allowlist.sh"
 
