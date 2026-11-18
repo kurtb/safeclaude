@@ -2,6 +2,13 @@
 
 - Always keep `README.md` up to date when making changes to the Dockerfile, adding new features, or changing how the image is built or run.
 
+## Container lane is in maintenance mode
+
+The Docker container lane (`Dockerfile`, `init-firewall.sh`, `entrypoint.sh`, `safeclaude.zsh`, `install.sh` and the image workflows) is being retired in favour of the VM lane in `vm/`.
+
+- Container changes are limited to allowlist fixes and tool-version bumps. Do not add container features or new container mechanisms.
+- New capabilities go into `vm/`. If the container has something the VM lacks, port it to the VM rather than improving the container copy.
+
 ## Versioning & releases
 
 Releases are cut via the **Release** workflow (Actions → Release → pick a bump). For this rolling image, "compatibility" means runtime behavior / how you use it — not a code API. Choose the bump by that lens:
