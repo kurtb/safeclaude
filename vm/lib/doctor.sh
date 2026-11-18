@@ -59,6 +59,20 @@ check_firewall() {
       return 1
     fi
   done
+  check_firewall_lifecycle
+}
+
+# nftables.service flushes the ruleset on start, reload and stop. Its drop-in
+# must restore the devvm tables after each, or the guest firewall fails open.
+check_firewall_lifecycle() {
+  local prop
+  for prop in ExecStartPost ExecReload ExecStopPost; do
+    if ! systemctl show -p "$prop" --value nftables.service |
+        grep -Fq 'argv[]=/usr/local/lib/devvm/host-firewall.sh --restore ;'; then
+      echo "  nftables.service $prop does not restore the devvm firewall; rerun sudo ./install-host.sh" >&2
+      return 1
+    fi
+  done
 }
 
 proxy_listening() {

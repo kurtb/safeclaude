@@ -35,6 +35,8 @@ fi
 
 "$SRC/host/install-egress.sh"
 install -o root -g root -m 0644 "$SRC/proxy/devvm-firewall.service" /etc/systemd/system/
+install -d -o root -g root -m 0755 /etc/systemd/system/nftables.service.d
+install -T -o root -g root -m 0644 "$SRC/proxy/nftables-devvm.conf" /etc/systemd/system/nftables.service.d/devvm.conf
 systemctl daemon-reload
 systemctl enable --now devvm-firewall.service
 install -d -o root -g root -m 0755 "$DEST/drivers" "$DEST/lib"

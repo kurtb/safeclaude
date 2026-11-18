@@ -161,7 +161,9 @@ Run `vm/test/project-isolation.sh VM_A VM_B` against two running project VMs aft
 1. `sudo ./install-host.sh` — installs the egress enforcement root-owned to
    `/usr/local/lib/devvm` (the driver runs that copy, never the checkout) and
    the dedicated proxy and firewall units. Incus requires `devvm-firewall.service`
-   to restore the last applied rules before the daemon starts. The installer puts `devvm` on PATH. If you previously sourced `devvm.sh`, remove that line from your shell startup and open a new shell.
+   to restore the last applied rules before the daemon starts. A drop-in for
+   `nftables.service` restores them again after that service starts, reloads or
+   stops, since each of those flushes the whole ruleset. The installer puts `devvm` on PATH. If you previously sourced `devvm.sh`, remove that line from your shell startup and open a new shell.
 2. Ensure your shell is in the `incus-admin` group (`newgrp incus-admin` or
    re-login) so `devvm` can talk to the Incus socket.
 
