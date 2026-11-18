@@ -186,6 +186,10 @@ devvm allow --refresh                         # re-apply, change nothing
 
 Details in [README.md](README.md#adding-hosts).
 
+If *every* allowed host starts failing after the host changed networks or DNS
+settings, the proxy is still using the old resolver: on the host, run
+`sudo systemctl restart devvm-proxy`.
+
 Edit the clone in-guest (`devvm shell`), or move files with `incus file`. VS Code
 Remote-SSH is a planned follow-up — the cloud image ships no SSH server or host
 key yet.

@@ -129,14 +129,6 @@ fi
 mv "$ETC/allowed-domains.new" "$ETC/allowed-domains"
 install -o root -g root -m 0644 "$tmp/haproxy.cfg" "$ETC/haproxy.cfg"
 
-# Upgrade from the Squid-based design: drop its drop-in so it releases the
-# ports. Squid itself is no longer used by devvm and can be uninstalled.
-if [ -e /etc/squid/conf.d/devvm.conf ]; then
-  rm -f /etc/squid/conf.d/devvm.conf /etc/squid/devvm-allowed-domains /etc/squid/devvm-proxy.pem
-  systemctl reload squid 2>/dev/null || systemctl restart squid 2>/dev/null || true
-  echo "note: removed the old Squid drop-in; squid is no longer used by devvm (apt remove squid-openssl if nothing else needs it)"
-fi
-
 # 2) DNS is served by Incus's OWN dnsmasq (it owns :53 on the bridge and does
 #    DHCP), made allowlist-only by the driver via the network's raw.dnsmasq
 #    (no-resolv + one server=/<domain>/<upstream> per allowlisted host). NOTE:

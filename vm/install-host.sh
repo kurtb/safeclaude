@@ -24,6 +24,16 @@ install -o root -g root -m 0644 "$SRC/proxy/haproxy.cfg"    "$DEST/haproxy.cfg"
 install -o root -g root -m 0644 "$SRC/proxy/bogons.lst"     "$DEST/bogons.lst"
 # Files from the Squid-based design, no longer used.
 rm -f "$DEST/squid.conf" "$DEST/resolve-allowlist.sh"
+# Upgrade from the Squid-based design: remove its drop-in so Squid releases the
+# ports the new proxy binds. Squid itself is no longer used by devvm.
+if [ -e /etc/squid/conf.d/devvm.conf ]; then
+  rm -f /etc/squid/conf.d/devvm.conf /etc/squid/devvm-allowed-domains /etc/squid/devvm-proxy.pem
+  if systemctl is-active --quiet squid; then
+    systemctl restart squid \
+      || echo "WARNING: squid did not restart cleanly; stop it (systemctl stop squid) before the next 'devvm up'" >&2
+  fi
+  echo "Removed the old Squid drop-in. squid is no longer used by devvm (apt remove squid-openssl if nothing else needs it)."
+fi
 
 # The dedicated proxy instance. host-egress.sh writes its config and starts it;
 # it is not started here because the bridge it binds to may not exist yet.
