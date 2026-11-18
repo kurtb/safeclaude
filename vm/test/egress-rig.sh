@@ -43,8 +43,16 @@ UPSTREAM="${UPSTREAM:-1.1.1.1}"
 # is outside the production bogon list and exists only on this private link.
 origin_ns=devvmrig-origin
 origin_ip=192.0.9.6
+remove_origin() {
+  if [[ -e $RUN/owns-origin ]]; then
+    ip netns pids "$origin_ns" | xargs -r kill || true
+    ip netns del "$origin_ns"
+    rm -f "$RUN/owns-origin"
+  fi
+}
 fixture_origin() {
-  if [[ -e "$RUN/fixture.ready" ]]; then return; fi
+  # A persistent rig can outlive its short-lived TLS certificate.
+  remove_origin
   ip netns add "$origin_ns"
   touch "$RUN/owns-origin"
   ip link add rigorigin0 type veth peer name eth0 netns "$origin_ns"
@@ -62,7 +70,6 @@ fixture_origin() {
     --directory "$RUN/www" >"$RUN/http.log" 2>&1 </dev/null &
   ip netns exec "$origin_ns" openssl s_server -accept "$origin_ip:443" \
     -cert "$RUN/cert" -key "$RUN/key" -www -quiet >"$RUN/tls.log" 2>&1 </dev/null &
-  touch "$RUN/fixture.ready"
 }
 
 # True when this machine has a devvm install that the rig did not create.
@@ -77,10 +84,7 @@ down() {
     echo "refusing: this machine has a devvm install the rig did not create; not touching it" >&2
     exit 1
   fi
-  if [[ -e $RUN/owns-origin ]]; then
-    ip netns pids "$origin_ns" | xargs -r kill || true
-    ip netns del "$origin_ns"
-  fi
+  remove_origin
   if [ -f "$RUN/dnsmasq.pid" ]; then kill "$(cat "$RUN/dnsmasq.pid")" 2>/dev/null || true; fi
   if [ -f "$RUN/proxydns.pid" ]; then kill "$(cat "$RUN/proxydns.pid")" 2>/dev/null || true; fi
   if [ -e "$RUN/made-local" ]; then rm -f /etc/devvm/allowlist.local; fi
