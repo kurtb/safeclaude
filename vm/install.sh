@@ -55,13 +55,13 @@ main() (
   echo "Verified the $tag archive checksum. Installing host packages, devvm and systemd firewall services."
   echo "The host installer configures the signed Zabbly stable APT source for Incus if needed."
   if (( EUID == 0 )); then
-    apply_archive "$tag" "${manifest%% *}" < devvm.tar.gz
+    apply_archive "$tag" "${manifest%% *}"
   else
     # Send only this fixed function as code. Tag and digest are positional
     # arguments, and sudo obtains any password from the controlling terminal.
     sudo -- /bin/bash -c "$(declare -f apply_archive)"$'\napply_archive "$@"' \
-      devvm-install "$tag" "${manifest%% *}" < devvm.tar.gz
-  fi
+      devvm-install "$tag" "${manifest%% *}"
+  fi < devvm.tar.gz
   echo "Installed SafeClaude $tag on the host"
 )
 main "$@"
