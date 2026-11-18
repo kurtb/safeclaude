@@ -8,7 +8,7 @@ Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) i
 > [`vm/`](vm/README.md). Until then everything below this notice still describes
 > the container accurately, and on macOS or Windows it is the only option.
 >
-> **VM lane (`vm/`) — where this project is heading. Linux/Incus only today.**
+> **VM lane (`vm/`) — Linux/Incus.** Each project gets a separate bridge, and the host restores its firewall before Incus starts.
 > `devvm` boots a per-project VM with a host-enforced, default-deny egress
 > allowlist of its own ([`vm/allowlist.conf`](vm/allowlist.conf), separate from
 > the container's list below). It has a separate kernel, runs Docker/minikube

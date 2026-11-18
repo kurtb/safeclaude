@@ -57,9 +57,10 @@ down() {
   systemctl disable --now devvm-proxy.service >/dev/null 2>&1 || true
   ip netns del "$NS" 2>/dev/null || true
   ip link del "$DEVVM_NET" 2>/dev/null || true
+  nft delete table bridge devvm 2>/dev/null || true
   nft delete table inet devvm 2>/dev/null || true
-  rm -f /etc/systemd/system/devvm-proxy.service /etc/devvm/haproxy.cfg /etc/devvm/allowed-domains /etc/devvm/bogons
-  rm -rf "$RUN" "/etc/netns/$NS" /usr/local/lib/devvm /run/devvm-proxy-applied
+  rm -f /etc/devvm/firewall.nft /etc/systemd/system/devvm-proxy.service /etc/devvm/haproxy.cfg /etc/devvm/allowed-domains /etc/devvm/bogons
+  rm -rf "$RUN" "/etc/netns/$NS" /usr/local/lib/devvm /run/devvm-proxy-applied /run/devvm-firewall-applied
   rmdir /etc/devvm 2>/dev/null || true      # kept if it holds allowlist.local
   systemctl daemon-reload
 }

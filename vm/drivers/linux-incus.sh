@@ -69,6 +69,68 @@ ensure_network() {
   incus network set "$NET" "raw.dnsmasq=$raw"
 }
 
+# Linux interface names are limited to 15 bytes. The project name ends with
+# the stable eight-digit hash from devvm.sh. The owner tag detects collisions.
+project_bridge() {
+  local hash=${name##*-}
+  [[ $hash =~ ^[0-9a-f]{8}$ ]] || { echo "invalid project name: $name" >&2; return 1; }
+  printf 'dvmp-%s' "$hash"
+}
+
+ensure_project_network() {
+  local net=$1 raw
+  raw="$(build_raw_dnsmasq)"
+  if ! incus network show "$net" >/dev/null 2>&1; then
+    # Incus selects a free subnet from its IPv4 pool and persists the choice.
+    incus network create "$net" ipv4.address=auto ipv4.nat=false ipv4.firewall=false \
+      ipv6.address=none dns.mode=none "user.devvm.owner=$name" "raw.dnsmasq=$raw" ||
+      incus network show "$net" >/dev/null
+  fi
+  [[ $(incus network get "$net" user.devvm.owner) == "$name" ]] || {
+    echo "bridge $net is owned by another project" >&2; return 1;
+  }
+  incus network set "$net" "raw.dnsmasq=$raw"
+}
+
+refresh_project_dns() {
+  local nets raw net
+  raw="$(build_raw_dnsmasq)"
+  nets="$(incus network list --format json | jq -r '.[] |
+    select(.name | test("^dvmp-[0-9a-f]{8}$")) |
+    select(.config["user.devvm.owner"] != null) | .name')"
+  while IFS= read -r net; do
+    [[ -n $net ]] && incus network set "$net" "raw.dnsmasq=$raw"
+  done <<< "$nets"
+  return 0
+}
+
+ensure_project_nic() {
+  local net=$1 current
+  current="$(incus config device get "$name" eth0 network)"
+  [[ $current != "$net" ]] || return 0
+  if [[ $current != "$NET" ]]; then
+    echo "$name has an unexpected eth0 network '$current'; check its NIC before starting it" >&2
+    return 1
+  fi
+  if is_running; then
+    echo "Stop $name once with devvm stop, then run devvm up to migrate its legacy network." >&2
+    return 1
+  fi
+  incus config device set "$name" eth0 "network=$net"
+}
+
+remove_project() {
+  local net
+  net="$(project_bridge)"
+  if incus info "$name" >/dev/null 2>&1; then incus delete -f "$name"; fi
+  if incus network show "$net" >/dev/null 2>&1; then
+    [[ $(incus network get "$net" user.devvm.owner) == "$name" ]] || {
+      echo "leaving bridge $net owned by another project" >&2; return 1;
+    }
+    incus network delete "$net"
+  fi
+}
+
 create_if_absent() {
   incus info "$name" >/dev/null 2>&1 && return 0
   echo "Creating $name (stopped) ..."
@@ -76,11 +138,9 @@ create_if_absent() {
   # disk device, so the host FS is never reachable from the guest.
   incus init "$IMAGE" "$name" --vm \
     -c limits.cpu=4 -c limits.memory=8GiB \
-    --network "$NET"
-  # Don't auto-start on host boot: nft rules aren't persisted, so an autostarted
-  # VM could come up before egress is applied (the proxy unit relies on this
-  # too: it may be running before the rules exist after a reboot). `devvm`
-  # re-applies egress on every ensure before starting.
+    --network "$1"
+  # Project VMs remain stopped until requested. The firewall unit also
+  # protects a guest started directly through Incus after a host reboot.
   incus config set "$name" boot.autostart=false
   # Nested virt for minikube's kvm2 depends on HOST nested virt being on
   # (kvm_intel/amd nested=1); there's no per-instance VM flag. docker driver
@@ -132,7 +192,6 @@ wait_agent() {
 # Re-apply the allowlist to DNS + the proxy + the nft rules. Touches no VM, so
 # running guests pick the change up live.
 apply_egress() {
-  ensure_network
   # Run the ROOT-OWNED installed copy, not the checkout.
   local egress=/usr/local/lib/devvm/host-egress.sh
   [ -x "$egress" ] || { echo "host egress not installed; run: sudo \"$VMDIR/install-host.sh\"" >&2; exit 1; }
@@ -140,7 +199,12 @@ apply_egress() {
 }
 
 cmd_ensure() {
-  need; ensure_network; create_if_absent
+  local net
+  need; ensure_network
+  net="$(project_bridge)"
+  ensure_project_network "$net"
+  create_if_absent "$net"
+  ensure_project_nic "$net"
   apply_egress                                  # host egress re-applied every run (never fail open)
   is_running || incus start "$name"
   wait_agent
@@ -164,9 +228,9 @@ cmd_shell() {
 
 case "$verb" in
   ensure) cmd_ensure ;;
-  refresh) need; apply_egress ;;
+  refresh) need; ensure_network; refresh_project_dns; apply_egress ;;
   shell)  cmd_shell ;;
   stop)   need; incus stop "$name" ;;
-  rm)     need; incus delete -f "$name" ;;
+  rm)     need; remove_project ;;
   *) echo "unknown verb: $verb" >&2; exit 1 ;;
 esac
