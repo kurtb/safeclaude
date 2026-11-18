@@ -8,7 +8,7 @@
 #
 # Groups:  base    shell tools, compilers, Python venv/pip, linters, neovim
 #          node    Node.js (via fnm; current LTS unless NODE_VERSION says) + Bun
-#          mise    mise, for per-project tool versions (.mise.toml / .tool-versions)
+#          mise    mise, for per-project tool versions (mise.toml / .tool-versions)
 #          agents  Codex, Gemini and Cursor CLIs, yolo-* aliases   (needs node)
 #          git     delta as pager; user.name/user.email from GIT_USER_NAME/EMAIL
 #
@@ -26,8 +26,9 @@
 # step; this is the comfortable-workstation layer on top.
 #
 # TRUST: like the container image it replaces, this runs upstream installers
-# (bun.sh, cursor.com) and "latest" release binaries (Neovim, fnm, Codex) with
-# no checksum or signature check. A compromised upstream would run code as
+# (bun.sh, cursor.com) and "latest" release binaries (Neovim, fnm, mise, Codex)
+# with no checksum or signature check; only hadolint, which is pinned, is
+# verified against its published checksum. A compromised upstream would run code as
 # `dev`, who has sudo in the guest. The egress allowlist limits where such code
 # could send things, not what it does inside the VM. Don't run this in a VM
 # that holds credentials you wouldn't hand to those vendors.
@@ -100,8 +101,16 @@ RCEOF
     # -c ...`, or zsh without a .zshrc yet) still gets the PATH.
     grep -qF "$RC" "$f" 2>/dev/null || printf '\n%s\n' "$line" >> "$f"
   done
+  load_rc
+}
+
+# Source the rc snippet without -e/-u: it evals fnm's and mise's shell hooks,
+# which aren't written for a strict shell and must not be able to abort setup.
+load_rc() {
+  set +eu
   # shellcheck disable=SC1090
   . "$RC"
+  set -eu
 }
 
 group_base() {
@@ -122,8 +131,12 @@ group_base() {
 
   step "hadolint ${HADOLINT_VERSION}"
   if have hadolint; then echo "already installed"; else
-    fetch "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${A_ALT}" "$TMP/hadolint"
-    install -m 0755 "$TMP/hadolint" "$BIN/hadolint"
+    local u="https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${A_ALT}"
+    fetch "$u" "$TMP/hadolint-Linux-${A_ALT}"
+    fetch "$u.sha256" "$TMP/hadolint.sha256"
+    (cd "$TMP" && sha256sum -c --status hadolint.sha256) \
+      || { echo "FAILED: hadolint checksum mismatch — not installing it" >&2; exit 1; }
+    install -m 0755 "$TMP/hadolint-Linux-${A_ALT}" "$BIN/hadolint"
   fi
 
   step "Neovim (latest stable)"
@@ -176,6 +189,12 @@ group_node() {
   fi
 }
 
+bypass_note() {
+  echo "NOTE: set skipDangerousModePermissionPrompt in ~/.claude/settings.json — Claude Code will no"
+  echo "  longer show its one-time bypass-permissions warning in this VM. To undo, remove that key;"
+  echo "  to keep the warning on future runs, set DEVVM_KEEP_BYPASS_PROMPT=1."
+}
+
 group_mise() {
   step "mise"
   # mise's own installer lives on mise.run, which isn't allowlisted; the release
@@ -207,7 +226,7 @@ group_agents() {
   fi
 
   step "Cursor CLI"
-  if have agent || have cursor-agent; then echo "already installed"; else
+  if have cursor-agent || have agent; then echo "already installed"; else
     fetch https://cursor.com/install "$TMP/cursor-install.sh"; bash "$TMP/cursor-install.sh"
   fi
 
@@ -221,15 +240,18 @@ group_agents() {
   elif [ ! -s "$s" ]; then
     mkdir -p "$HOME/.claude"
     echo '{"skipDangerousModePermissionPrompt": true}' > "$s"
+    bypass_note
   elif ! have jq; then
-    echo "jq missing — run the 'base' group first" >&2; exit 1
+    echo "NOTE: jq isn't installed, so $s was left alone. Run the 'base' group, then 'agents' again." >&2
   elif ! jq -e . "$s" >/dev/null 2>&1; then
     echo "NOTE: $s isn't valid JSON; leaving it alone. Fix it and re-run to pre-accept the prompt." >&2
   elif [ "$(jq -r '.skipDangerousModePermissionPrompt // false' "$s")" = true ]; then
     echo "already set"
   else
     # Merged into the existing settings, so nothing you set is lost.
-    jq '. + {skipDangerousModePermissionPrompt: true}' "$s" > "$TMP/settings.json" && mv "$TMP/settings.json" "$s"
+    # cat, not mv: keeps the file's own mode and owner.
+    jq '. + {skipDangerousModePermissionPrompt: true}' "$s" > "$TMP/settings.json" && cat "$TMP/settings.json" > "$s"
+    bypass_note
   fi
 }
 
@@ -255,10 +277,9 @@ write_rc
 [ $# -gt 0 ] || set -- base node mise agents git
 # Re-source after each group: a later group needs the PATH entries (node, npm,
 # bun) that only exist once an earlier one has run.
-# shellcheck disable=SC1090
 for g in "$@"; do
   case "$g" in
-    base|node|mise|agents|git) "group_$g"; . "$RC" ;;
+    base|node|mise|agents|git) "group_$g"; load_rc ;;
     *) echo "unknown group: $g (base | node | mise | agents | git)" >&2; exit 1 ;;
   esac
 done

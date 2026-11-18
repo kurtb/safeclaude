@@ -165,7 +165,9 @@ Things to know:
   aliases and is rewritten on every run; put your own settings in `~/.bashrc`
   or `~/.zshrc`.
 
-Anything beyond that is the repo's own bootstrap step. If a download fails with "Could not resolve host", that host isn't on the
+Anything beyond that is the repo's own bootstrap step.
+
+If a download fails with "Could not resolve host", that host isn't on the
 allowlist. Add it **on the host** (not in the VM):
 
 ```bash
