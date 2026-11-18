@@ -14,7 +14,7 @@ Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) i
 > the container's list below). It has a separate kernel, runs Docker/minikube
 > natively, and keeps enforcement where the guest can't reach it. You work in
 > the VM as an unprivileged `dev` user and log in to GitHub/Claude there
-> yourself (`devvm` never handles credentials). See
+> yourself (`devvm` never handles credentials). The host installer puts `devvm` on PATH. It supports snapshots, guest upgrades, a diagnostic command, VS Code Remote-SSH and one-file copies. Cloud tools are available as a separate guest install. See
 > [`vm/README.md`](vm/README.md) for what works today and its known
 > limitations. It is still experimental; the macOS/WSL2 drivers are stubs.
 

@@ -21,7 +21,7 @@ that can be shared.
 | `devvm.sh` — CLI + OS detection/dispatch | |
 
 ```
-devvm [up|shell|stop|rm] [--name X]
+devvm help
 ```
 
 ## Boundary model (Linux driver)
@@ -71,9 +71,7 @@ it connected to: `journalctl -u devvm-proxy`.
 
 Clone-only: `devvm` reads the current folder's git remote and the guest clones it
 into `/home/dev/workspace`; nothing is mounted from the host. Edit the clone
-in-guest with `devvm shell` (or move files with `incus file`). *(VS Code
-Remote-SSH is a planned follow-up — the cloud image ships no SSH server or host
-key yet.)*
+in-guest with `devvm shell`, connect VS Code Remote-SSH with `devvm ssh-config`, or transfer a single file with `devvm cp`. See the [editor setup](QUICKSTART.md#edit-from-the-host).
 
 **The guest is a fresh dev machine.** A new VM boots **bare** — nothing is
 installed at boot, and `devvm` drops you into a root shell. You set it up by
@@ -150,21 +148,17 @@ Run `vm/test/project-isolation.sh VM_A VM_B` against two running project VMs aft
 
 ### Host setup (prerequisites)
 
-0. Install **`haproxy`** (2.8 or newer, which Ubuntu 24.04 ships; older
-   versions are untested and refused) and **`nftables`**, plus Incus (`incus admin init`).
-   Incus pulls in `dnsmasq-base` and runs its own dnsmasq on the managed bridge.
-   Squid is no longer used.
+0. Follow the [host prerequisites](QUICKSTART.md#phase-0--host-prerequisites-one-time) for Incus 7.5.1+, HAProxy 2.8+ and the DNS and firewall tools. Refresh APT indexes and run `./install-host.sh --check` from this directory.
 1. `sudo ./install-host.sh` — installs the egress enforcement root-owned to
    `/usr/local/lib/devvm` (the driver runs that copy, never the checkout) and
    the dedicated proxy and firewall units. Incus requires `devvm-firewall.service`
-   to restore the last applied rules before the daemon starts.
+   to restore the last applied rules before the daemon starts. The installer puts `devvm` on PATH. If you previously sourced `devvm.sh`, remove that line from your shell startup and open a new shell.
 2. Ensure your shell is in the `incus-admin` group (`newgrp incus-admin` or
    re-login) so `devvm` can talk to the Incus socket.
 
-### Still to verify (non-egress)
+### Cloud and cluster tools
 
-- Host nested virt on (`kvm_intel/amd nested=1`) for minikube `kvm2`, then
-  `minikube start --driver=docker` inside the guest.
+The [optional cloud installer](QUICKSTART.md#optional-cloud-tools) adds gcloud, Pulumi, kubectl, Helm and minikube. The Docker driver runs inside the project VM.
 
 ## Guest toolbox
 
@@ -199,7 +193,7 @@ devvm allow --refresh                    # re-apply the list, change nothing
   leaves open connections alone. **Removing one restarts the proxy**, which
   cuts every open connection from every devvm VM (including to the host just
   removed); clients reconnect. It is
-  **machine-wide** — every devvm VM shares the one bridge and the one list.
+  **machine-wide** across all project bridges.
 - **Exact host names only**, no wildcards: each layer works per name. A pasted
   URL is trimmed to its host.
 - A download often needs a *second* host — the one it redirects to (a blob CDN,

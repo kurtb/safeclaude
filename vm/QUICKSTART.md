@@ -17,9 +17,9 @@ cat /sys/module/kvm_intel/parameters/nested 2>/dev/null \
 #   If it's N: echo "options kvm_intel nested=1" | sudo tee /etc/modprobe.d/kvm.conf
 #   then: sudo modprobe -r kvm_intel && sudo modprobe kvm_intel   (AMD: kvm_amd)
 
-# 0b. Install Incus + the egress tooling (HAProxy 2.8 or newer; Ubuntu 24.04 ships it).
+# 0b. Configure a supported Incus APT source first (see below).
 sudo apt update
-sudo apt install -y incus haproxy dnsmasq-base nftables jq curl git
+sudo apt install -y incus haproxy dnsmasq-base nftables jq bind9-dnsutils python3-apt curl git
 sudo incus admin init --minimal                 # accept the minimal defaults
 
 # 0c. Let your user drive Incus without sudo.
@@ -30,8 +30,7 @@ git clone https://github.com/kurtb/safeclaude.git
 cd safeclaude
 ```
 
-Why: Incus is the VM manager; HAProxy/dnsmasq/nftables are the host-side egress
-gates; `vm/` carries the tooling.
+Use Debian or Ubuntu with HAProxy 2.8+ and Incus 7.5.1+. For Ubuntu 24.04, configure the [Zabbly stable APT repository](https://github.com/zabbly/incus#stable-repository) before installing Incus. The installer checks installed versions against current signed package indexes. Use `./vm/install-host.sh --check` after `sudo apt update` to see which packages need attention.
 
 ## Phase 1 — install the egress enforcement root-owned (one-time)
 
@@ -47,20 +46,17 @@ nothing a repo-writer (or an agent) changes can run as root.
 ## Phase 2 — boot a project VM
 
 ```bash
-source ./vm/devvm.sh           # provides the `devvm` function (safe to source)
 cd ~/path/to/your-project      # a git repo; a public https origin is cloned inside
 devvm                          # create network+VM (first run), apply egress, boot, shell in (bare VM, root)
 ```
 
 The driver creates a dedicated bridge and subnet for the project, configures its DNS allowlist, and initializes the VM stopped. It applies the host firewall and proxy before starting the VM. A fresh VM opens a root shell.
 
-Set the VM up by hand, in that root shell:
+Exit that shell and run the installed guest setup from the host:
 
 ```bash
-apt-get update && apt-get install -y git      # skip if git is already there
-git clone https://github.com/kurtb/safeclaude.git
-bash safeclaude/vm/guest-setup.sh             # git, gh, Docker, Claude Code + the `dev` user
-exit
+devvm upgrade
+devvm shell
 ```
 
 The script runs in the foreground, so you see every step and any failure, and it
@@ -187,9 +183,15 @@ If *every* allowed host starts failing after the host changed networks or DNS
 settings, the proxy is still using the old resolver: on the host, run
 `sudo systemctl restart devvm-proxy`.
 
-Edit the clone in-guest (`devvm shell`), or move files with `incus file`. VS Code
-Remote-SSH is a planned follow-up — the cloud image ships no SSH server or host
-key yet.
+## Edit from the host
+
+Run `devvm ssh-config` in the project directory after guest setup. It prints an OpenSSH host entry with a dedicated identity and a pinned guest host key. Save it in a per-project SSH config fragment and include that file from `~/.ssh/config` before any `Host *` defaults. Connect with VS Code Remote-SSH using the printed host name. Set `remote.SSH.localServerDownload` to `always` for host-side VS Code Server downloads. SSH runs over the local Incus socket. The guest needs no network SSH listener.
+
+For one file, use `devvm cp push HOST_FILE /absolute/guest/path` or `devvm cp pull /absolute/guest/path HOST_FILE`. Choose a new destination path. Both commands work without configuring SSH.
+
+## Optional cloud tools
+
+Inside the guest as `dev`, run `bash ~/workspace/safeclaude/vm/guest-cloud-tools.sh` from a SafeClaude clone, then `minikube start --driver=docker`. The installer supplies gcloud, Pulumi, kubectl, Helm and minikube. If a registry pull fails, inspect the Location header with `curl -sSI https://registry.k8s.io/v2/pause/manifests/3.10`. Run `devvm allow HOSTNAME` on the host for the exact regional redirect destination if the project needs it.
 
 ## Teardown
 
