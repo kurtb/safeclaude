@@ -18,6 +18,13 @@
 #
 # Optional on purpose: guest-setup.sh stays the small "every project needs this"
 # step; this is the comfortable-workstation layer on top.
+#
+# TRUST: like the container image it replaces, this runs upstream installers
+# (bun.sh, cursor.com) and "latest" release binaries (Neovim, fnm, Codex) with
+# no checksum or signature check. A compromised upstream would run code as
+# `dev`, who has sudo in the guest. The egress allowlist limits where such code
+# could send things, not what it does inside the VM. Don't run this in a VM
+# that holds credentials you wouldn't hand to those vendors.
 set -euo pipefail
 
 [ "$(id -u)" != 0 ] || { echo "run as dev, not root (it uses sudo where needed): bash $0" >&2; exit 1; }
@@ -30,12 +37,15 @@ RC="$HOME/.config/devvm/shellrc.sh"     # sourced from ~/.bashrc and ~/.zshrc
 FNM_DIR="$HOME/.local/share/fnm"
 export NPM_CONFIG_PREFIX="$HOME/.npm-global"
 mkdir -p "$BIN" "$(dirname "$RC")"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT   # every download lands here
 
 step() { printf '\n==> %s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 # Download to a temp file first, so a failed fetch never leaves a half-written
 # binary on PATH (and never pipes an empty script into a shell).
-fetch() { curl -fsSL --retry 3 -o "$2" "$1"; }
+# --retry-all-errors: the VM's egress proxy sometimes fails a TLS handshake to an
+# allowed host (VEC-234), which plain --retry doesn't count as retryable.
+fetch() { curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o "$2" "$1"; }
 
 case "$(uname -m)" in
   x86_64)  A_GNU=x86_64;  A_ALT=x86_64; A_FNM=linux ;;
@@ -55,6 +65,13 @@ for _d in "$HOME/.local/bin" "$NPM_CONFIG_PREFIX/bin" "$FNM_DIR" \
 done
 unset _d
 export PATH
+# fnm needs its per-shell environment for `fnm use` / `fnm install` to switch
+# versions. Its path goes ahead of the default-version entry added above.
+if [ -x "$FNM_DIR/fnm" ]; then
+  if [ -n "${ZSH_VERSION:-}" ]; then eval "$("$FNM_DIR/fnm" env --shell zsh)"
+  elif [ -n "${BASH_VERSION:-}" ]; then eval "$("$FNM_DIR/fnm" env --shell bash)"
+  fi
+fi
 
 # YOLO launchers — fine HERE: egress is capped on the host and the host
 # filesystem isn't mounted. Never copy these to a machine without that.
@@ -80,22 +97,27 @@ group_base() {
     ca-certificates curl gnupg git openssh-client rsync \
     zsh fzf ripgrep jq unzip wget xz-utils less tmux tree htop lsof file \
     build-essential python3 python3-venv python3-dev python3-pip \
-    shellcheck git-delta
+    shellcheck
+  # git-delta is only packaged from Ubuntu 24.04 on; don't fail the group on an
+  # older guest.
+  if apt-cache show git-delta >/dev/null 2>&1; then
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git-delta
+  else
+    echo "NOTE: git-delta isn't packaged for this release; skipping (git keeps its default pager)"
+  fi
 
   step "hadolint ${HADOLINT_VERSION}"
   if have hadolint; then echo "already installed"; else
-    t="$(mktemp)"
-    fetch "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${A_ALT}" "$t"
-    install -m 0755 "$t" "$BIN/hadolint"; rm -f "$t"
+    fetch "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${A_ALT}" "$TMP/hadolint"
+    install -m 0755 "$TMP/hadolint" "$BIN/hadolint"
   fi
 
   step "Neovim (latest stable)"
   if have nvim; then echo "already installed"; else
-    t="$(mktemp)"
-    fetch "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${A_ALT}.tar.gz" "$t"
+    fetch "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${A_ALT}.tar.gz" "$TMP/nvim.tgz"
     mkdir -p "$HOME/.local/opt"
     rm -rf "$HOME/.local/opt/nvim-linux-${A_ALT}"
-    tar -xzf "$t" -C "$HOME/.local/opt"; rm -f "$t"
+    tar -xzf "$TMP/nvim.tgz" -C "$HOME/.local/opt"
     ln -sf "$HOME/.local/opt/nvim-linux-${A_ALT}/bin/nvim" "$BIN/nvim"
   fi
 }
@@ -106,9 +128,8 @@ group_node() {
   # release zip on GitHub is the same binary.
   if [ ! -x "$FNM_DIR/fnm" ]; then
     have unzip || { echo "unzip missing — run the 'base' group first" >&2; exit 1; }
-    t="$(mktemp)"
-    fetch "https://github.com/Schniz/fnm/releases/latest/download/fnm-${A_FNM}.zip" "$t"
-    mkdir -p "$FNM_DIR"; unzip -oq "$t" fnm -d "$FNM_DIR"; rm -f "$t"
+    fetch "https://github.com/Schniz/fnm/releases/latest/download/fnm-${A_FNM}.zip" "$TMP/fnm.zip"
+    mkdir -p "$FNM_DIR"; unzip -oq "$TMP/fnm.zip" fnm -d "$FNM_DIR"
     chmod 0755 "$FNM_DIR/fnm"
   fi
   export FNM_DIR
@@ -122,20 +143,24 @@ group_node() {
   step "Bun"
   if [ -x "$HOME/.bun/bin/bun" ]; then echo "already installed"; else
     have unzip || { echo "unzip missing — run the 'base' group first" >&2; exit 1; }
-    t="$(mktemp)"; fetch https://bun.sh/install "$t"
-    # The installer appends PATH lines to the rc files; ours are in $RC already.
-    BUN_INSTALL="$HOME/.bun" SHELL=/bin/false bash "$t" >/dev/null 2>&1; rm -f "$t"
-    [ -x "$HOME/.bun/bin/bun" ] || { echo "FAILED: bun did not install" >&2; exit 1; }
+    fetch https://bun.sh/install "$TMP/bun-install.sh"
+    # SHELL=/bin/false: the installer would otherwise append PATH lines to the rc
+    # files; ours are in $RC already. Its progress bar is noise, so the output is
+    # kept in a log and shown only if the install fails.
+    if ! BUN_INSTALL="$HOME/.bun" SHELL=/bin/false bash "$TMP/bun-install.sh" >"$TMP/bun.log" 2>&1 \
+       || [ ! -x "$HOME/.bun/bin/bun" ]; then
+      cat "$TMP/bun.log" >&2
+      echo "FAILED: bun did not install (installer output above)" >&2; exit 1
+    fi
   fi
 }
 
 group_agents() {
   step "Codex CLI"
   if have codex; then echo "already installed"; else
-    t="$(mktemp -d)"
-    fetch "https://github.com/openai/codex/releases/latest/download/codex-${A_GNU}-unknown-linux-musl.tar.gz" "$t/codex.tgz"
-    tar -xzf "$t/codex.tgz" -C "$t"
-    install -m 0755 "$t/codex-${A_GNU}-unknown-linux-musl" "$BIN/codex"; rm -rf "$t"
+    fetch "https://github.com/openai/codex/releases/latest/download/codex-${A_GNU}-unknown-linux-musl.tar.gz" "$TMP/codex.tgz"
+    tar -xzf "$TMP/codex.tgz" -C "$TMP"
+    install -m 0755 "$TMP/codex-${A_GNU}-unknown-linux-musl" "$BIN/codex"
   fi
 
   step "Gemini CLI"
@@ -146,21 +171,28 @@ group_agents() {
 
   step "Cursor CLI"
   if have agent || have cursor-agent; then echo "already installed"; else
-    t="$(mktemp)"; fetch https://cursor.com/install "$t"; bash "$t"; rm -f "$t"
+    fetch https://cursor.com/install "$TMP/cursor-install.sh"; bash "$TMP/cursor-install.sh"
   fi
 
+  # `yolo-claude` otherwise stops on a one-time "bypass permissions mode"
+  # acceptance screen. This is a security-relevant default, so it is skippable:
+  # DEVVM_KEEP_BYPASS_PROMPT=1 leaves Claude Code's settings alone.
   step "Claude Code: pre-accept the bypass-permissions prompt"
-  # Merged into any existing settings, so nothing you set is lost.
-  s="$HOME/.claude/settings.json"; mkdir -p "$HOME/.claude"
-  if [ -s "$s" ]; then
-    have jq || { echo "jq missing — run the 'base' group first" >&2; exit 1; }
-    if [ "$(jq -r '.skipDangerousModePermissionPrompt // false' "$s")" = true ]; then
-      echo "already set"
-    else
-      t="$(mktemp)"; jq '. + {skipDangerousModePermissionPrompt: true}' "$s" > "$t" && mv "$t" "$s"
-    fi
-  else
+  local s="$HOME/.claude/settings.json"
+  if [ -n "${DEVVM_KEEP_BYPASS_PROMPT:-}" ]; then
+    echo "skipped (DEVVM_KEEP_BYPASS_PROMPT is set)"
+  elif [ ! -s "$s" ]; then
+    mkdir -p "$HOME/.claude"
     echo '{"skipDangerousModePermissionPrompt": true}' > "$s"
+  elif ! have jq; then
+    echo "jq missing — run the 'base' group first" >&2; exit 1
+  elif ! jq -e . "$s" >/dev/null 2>&1; then
+    echo "NOTE: $s isn't valid JSON; leaving it alone. Fix it and re-run to pre-accept the prompt." >&2
+  elif [ "$(jq -r '.skipDangerousModePermissionPrompt // false' "$s")" = true ]; then
+    echo "already set"
+  else
+    # Merged into the existing settings, so nothing you set is lost.
+    jq '. + {skipDangerousModePermissionPrompt: true}' "$s" > "$TMP/settings.json" && mv "$TMP/settings.json" "$s"
   fi
 }
 
@@ -193,7 +225,6 @@ for g in "$@"; do
     *) echo "unknown group: $g (base | node | agents | git)" >&2; exit 1 ;;
   esac
 done
-write_rc   # again: picks up directories that exist only now
 
 step "Done"
 for t in zsh rg fzf jq tmux nvim delta shellcheck hadolint node npm bun claude codex gemini agent; do

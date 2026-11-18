@@ -126,11 +126,24 @@ bash ~/workspace/safeclaude/vm/guest-tools.sh agents   # or one group
 | --- | --- |
 | `base` | zsh, fzf, ripgrep, jq, tmux, tree, htop, build-essential, Python venv/pip, shellcheck, hadolint, git-delta, Neovim |
 | `node` | Node.js (via fnm) and Bun |
-| `agents` | Codex, Gemini and Cursor CLIs, plus the `yolo-claude` / `yolo-codex` / `yolo-gemini` / `yolo-cursor` aliases |
+| `agents` | Codex, Gemini and Cursor CLIs, plus the `yolo-claude` / `yolo-codex` / `yolo-gemini` / `yolo-cursor` aliases. Also pre-accepts Claude Code's bypass-permissions prompt |
 | `git` | delta as the pager; `user.name` / `user.email` if you pass `GIT_USER_NAME` / `GIT_USER_EMAIL` |
 
-Open a new shell afterwards to pick up `PATH` and the aliases. Anything beyond
-that is the repo's own bootstrap step. If a download fails with "Could not resolve host", that host isn't on the
+Open a new shell afterwards to pick up `PATH` and the aliases. Things to know:
+
+- **It changes a Claude Code safety default.** The `agents` group sets
+  `skipDangerousModePermissionPrompt` in `~/.claude/settings.json`, so
+  `yolo-claude` starts without the one-time acceptance screen. Run it with
+  `DEVVM_KEEP_BYPASS_PROMPT=1` to keep the prompt.
+- **It trusts upstream.** It runs the Bun and Cursor installers and fetches the
+  latest Neovim, fnm and Codex releases with no checksum check, as the
+  container image does. The egress allowlist limits where code can send data,
+  not what runs inside the VM.
+- **Don't edit `~/.config/devvm/shellrc.sh`.** It holds the `PATH` entries and
+  aliases and is rewritten on every run; put your own settings in `~/.bashrc`
+  or `~/.zshrc`.
+
+Anything beyond that is the repo's own bootstrap step. If a download fails with "Could not resolve host", that host isn't on the
 allowlist. Add it **on the host** (not in the VM):
 
 ```bash
