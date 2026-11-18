@@ -81,7 +81,8 @@ fi
   | sed -e 's/[[:space:]]*$//' -e 's/^[[:space:]]*//' -e 's/^cidr://' \
   | tr '[:upper:]' '[:lower:]' | LC_ALL=C sort -u > "$tmp/domains"
 bad="$(grep -vE '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$' "$tmp/domains" || true)"
-[ -z "$bad" ] || { echo "FATAL: not a plain host name in the allowlist (no inline comments, wildcards or IPs):" >&2; echo "$bad" >&2; exit 1; }
+[ -z "$bad" ] || { echo "FATAL: not a plain host name in the allowlist (no inline comments, wildcards or IPs):" >&2; echo "$bad" >&2
+  echo "Fix the line in $LOCAL (your extras) or $CONF (the installed base list), then re-run." >&2; exit 1; }
 [ -s "$tmp/domains" ] || { echo "FATAL: the allowlist is empty; refusing to apply" >&2; exit 1; }
 
 # 1) Proxy config. Validate the new config BEFORE installing it, so a bad edit
