@@ -43,9 +43,12 @@ LOCAL="/etc/devvm/allowlist.local"
 eff="$(mktemp)"; rtmp="$(mktemp)"; trap 'rm -f "$eff" "$rtmp"' EXIT
 cat "$CONF" > "$eff"
 if [ -e "$LOCAL" ]; then
-  o="$(stat -c '%U' "$LOCAL")"; p="$(stat -c '%a' "$LOCAL")"
-  { [ "$o" = root ] && [ $((8#$p & 8#022)) -eq 0 ]; } \
-    || { echo "refusing: $LOCAL must be root-owned and not group/world-writable" >&2; exit 1; }
+  # The directory too: a writable parent would let the file be swapped.
+  for f in "$(dirname "$LOCAL")" "$LOCAL"; do
+    o="$(stat -c '%U' "$f")"; p="$(stat -c '%a' "$f")"
+    { [ "$o" = root ] && [ $((8#$p & 8#022)) -eq 0 ]; } \
+      || { echo "refusing: $f must be root-owned and not group/world-writable" >&2; exit 1; }
+  done
   { echo; cat "$LOCAL"; } >> "$eff"
 fi
 CONF="$eff"

@@ -181,8 +181,12 @@ devvm allow --refresh                    # re-resolve the whole list, change not
 - `--refresh` is also the fix for an *allowed* host that fails with `Couldn't
   connect to server`: its IP rotated out of the pinned snapshot (see "CDN drift"
   above).
-- A host everyone needs belongs in `allowlist.conf` via a PR (a **minor** bump),
-  followed by `sudo ./install-host.sh`.
+- A host everyone needs — including a redirect target like the blob CDNs above —
+  belongs in `allowlist.conf` via a PR (a **minor** bump), followed by
+  `sudo ./install-host.sh`.
+- "Already allowed" is judged against the **installed** list
+  (`/usr/local/lib/devvm/allowlist.conf`), not the checkout: after pulling a
+  newer `allowlist.conf`, re-run `sudo ./install-host.sh` to put it in force.
 
 ## Allowlist / posture
 

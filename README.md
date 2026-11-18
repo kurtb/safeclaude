@@ -239,10 +239,6 @@ Egress to anything else is rejected.
 
 ### Adding your own domains
 
-A download that fails on a host you trust means that host isn't on the list.
-(In the [dev-box VM](vm/README.md) lane the equivalent is `devvm allow <host>`,
-which applies live — see [vm/README.md](vm/README.md#adding-hosts).)
-
 Keep a personal allowlist that persists across rebuilds:
 
 ```zsh
@@ -269,6 +265,9 @@ it for all of them, and a single list is far simpler than per-project ones.
 **No extra domains?** Nothing special happens. With an empty or absent list,
 `safeclaude build` bakes an empty file and the firewall just uses its built-in
 allowlist — there's no mount and no missing-file edge case to worry about.
+
+**Using the dev-box VM instead?** The equivalent there is `devvm allow <host>`,
+which applies live — see [vm/README.md](vm/README.md#adding-hosts).
 
 **Why build-time and not a live runtime knob?** The allowlist source has to be
 something a `--dangerously-skip-permissions` agent inside the container *cannot*

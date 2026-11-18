@@ -81,7 +81,11 @@ _devvm_driver() {
 _DEVVM_LOCAL_ALLOW="/etc/devvm/allowlist.local"
 
 _devvm_allow() {
-  local drv mode=add h bare changed=0 hosts=() file="$_DEVVM_LOCAL_ALLOW"
+  local drv mode=add h bare esc hosts=() file="$_DEVVM_LOCAL_ALLOW"
+  # The INSTALLED base list is what is actually enforced; the checkout's copy
+  # may be newer (pulled, not yet re-installed), so never judge "already
+  # allowed" from the checkout.
+  local base="${DEVVM_INSTALL_DIR:-/usr/local/lib/devvm}/allowlist.conf"
   drv="$(_devvm_driver)" || return 1
   case "${1:-}" in
     --rm)      mode=rm; shift ;;
@@ -90,16 +94,26 @@ _devvm_allow() {
     -*)        echo "devvm allow: unknown option: $1" >&2; return 1 ;;
   esac
 
+  if [ "$mode" = refresh ]; then
+    [ $# -eq 0 ] || { echo "devvm allow --refresh takes no hosts (it changes nothing, only re-resolves)" >&2; return 1; }
+    "$drv" refresh _ "" "$_DEVVM_HERE"
+    return
+  fi
+
   if [ "$mode" = add ] && [ $# -eq 0 ]; then
     echo "extra egress allowlist ($file):"
     if [ -s "$file" ]; then sed 's/^/  /' "$file"; else echo "  (none)"; fi
-    echo "base list: $_DEVVM_HERE/allowlist.conf"
+    echo "base list: $base"
     return 0
   fi
-  [ "$mode" = refresh ] || [ $# -gt 0 ] || { echo "devvm allow --rm: name at least one host" >&2; return 1; }
+  [ $# -gt 0 ] || { echo "devvm allow --rm: name at least one host" >&2; return 1; }
+  [ -r "$base" ] || { echo "devvm allow: no installed allowlist at $base — run: sudo \"$_DEVVM_HERE/install-host.sh\"" >&2; return 1; }
 
   # Exact host names only: every layer (DNS, SNI proxy, IP pin) works per name,
   # so a wildcard can't be expressed. Accept a pasted URL by trimming it down.
+  # SECURITY: this regex is the only thing between user input and a root-owned
+  # config file (and the sed pattern in --rm below). Keep it strict — letters,
+  # digits, '-' and '.' only.
   for h in "$@"; do
     h="$(printf '%s' "$h" | tr '[:upper:]' '[:lower:]')"
     h="${h#http://}"; h="${h#https://}"; h="${h%%/*}"; h="${h%.}"
@@ -112,21 +126,31 @@ _devvm_allow() {
   done
 
   for h in "${hosts[@]}"; do
-    bare="${h#cidr:}"
+    bare="${h#cidr:}"; esc="${bare//./\\.}"
     if [ "$mode" = add ]; then
-      if grep -qxF -e "$bare" -e "cidr:$bare" "$file" 2>/dev/null \
-         || grep -qxF -e "$bare" -e "cidr:$bare" "$_DEVVM_HERE/allowlist.conf"; then
-        echo "already allowed: $bare"; continue
+      # A plain request is satisfied by either form; a cidr: request only by an
+      # existing cidr: entry, so it can widen a host that is already listed.
+      if [ "$h" = "$bare" ]; then
+        if grep -qxF -e "$bare" -e "cidr:$bare" "$file" "$base" 2>/dev/null; then
+          echo "already allowed: $bare"; continue
+        fi
+      else
+        if grep -qxF -e "cidr:$bare" "$file" "$base" 2>/dev/null; then
+          echo "already allowed: $h"; continue
+        fi
+        echo "note: cidr: pins the whole /24 around each address $bare resolves to — a wider grant than one host" >&2
       fi
       sudo install -d -o root -g root -m 0755 "$(dirname "$file")"
+      # Widening an existing plain extra replaces it rather than listing both.
+      if [ "$h" != "$bare" ] && [ -e "$file" ]; then sudo sed -i -e "/^${esc}\$/d" "$file"; fi
       printf '%s\n' "$h" | sudo tee -a "$file" >/dev/null
       sudo chown root:root "$file"; sudo chmod 0644 "$file"
-      echo "added: $h"; changed=1
+      echo "added: $h"
     else
       if grep -qxF -e "$bare" -e "cidr:$bare" "$file" 2>/dev/null; then
-        sudo sed -i -e "/^${bare//./\\.}\$/d" -e "/^cidr:${bare//./\\.}\$/d" "$file"
-        echo "removed: $bare"; changed=1
-      elif grep -qxF -e "$bare" -e "cidr:$bare" "$_DEVVM_HERE/allowlist.conf"; then
+        sudo sed -i -e "/^${esc}\$/d" -e "/^cidr:${esc}\$/d" "$file"
+        echo "removed: $bare"
+      elif grep -qxF -e "$bare" -e "cidr:$bare" "$base"; then
         echo "$bare is on the base list (vm/allowlist.conf), not an extra — edit that file and re-run install-host.sh" >&2
       else
         echo "not in the extras: $bare"
@@ -134,7 +158,8 @@ _devvm_allow() {
     fi
   done
 
-  [ "$mode" = refresh ] || [ "$changed" = 1 ] || return 0
+  # Always re-apply, even when the file didn't change: if an earlier apply
+  # failed, the file and the live rules disagree, and a retry must fix that.
   "$drv" refresh _ "" "$_DEVVM_HERE"
 }
 
