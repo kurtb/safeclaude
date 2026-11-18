@@ -7,12 +7,18 @@
 #   bash ~/workspace/safeclaude/vm/guest-tools.sh agents   # one group
 #
 # Groups:  base    shell tools, compilers, Python venv/pip, linters, neovim
-#          node    Node.js (via fnm) + Bun
+#          node    Node.js (via fnm; current LTS unless NODE_VERSION says) + Bun
+#          mise    mise, for per-project tool versions (.mise.toml / .tool-versions)
 #          agents  Codex, Gemini and Cursor CLIs, yolo-* aliases   (needs node)
 #          git     delta as pager; user.name/user.email from GIT_USER_NAME/EMAIL
 #
 # IDEMPOTENT: re-run it any time; finished steps are skipped. To upgrade one
-# tool, delete it and re-run. Everything it downloads goes through the host
+# tool, delete it and re-run. Node is the exception — re-running moves it:
+#   bash guest-tools.sh node                   # newest LTS becomes the default
+#   NODE_VERSION=28 bash guest-tools.sh node   # a specific line becomes the default
+#   fnm install 24 && fnm use 24               # or switch just this shell
+# Globally installed npm tools (gemini) live outside any one Node version, so
+# they survive a switch. Everything it downloads goes through the host
 # egress allowlist — "Could not resolve host" means that host isn't on it (run
 # `devvm allow <host>` on the HOST).
 #
@@ -30,7 +36,7 @@ set -euo pipefail
 [ "$(id -u)" != 0 ] || { echo "run as dev, not root (it uses sudo where needed): bash $0" >&2; exit 1; }
 command -v sudo >/dev/null || { echo "sudo not found — run guest-setup.sh first" >&2; exit 1; }
 
-NODE_MAJOR="${NODE_MAJOR:-24}"
+NODE_VERSION="${NODE_VERSION:-lts}"     # "lts" = newest LTS line; or 26, 24.11.0, ...
 HADOLINT_VERSION="${HADOLINT_VERSION:-2.12.0}"
 BIN="$HOME/.local/bin"
 RC="$HOME/.config/devvm/shellrc.sh"     # sourced from ~/.bashrc and ~/.zshrc
@@ -48,8 +54,8 @@ have() { command -v "$1" >/dev/null 2>&1; }
 fetch() { curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o "$2" "$1"; }
 
 case "$(uname -m)" in
-  x86_64)  A_GNU=x86_64;  A_ALT=x86_64; A_FNM=linux ;;
-  aarch64) A_GNU=aarch64; A_ALT=arm64;  A_FNM=arm64 ;;
+  x86_64)  A_GNU=x86_64;  A_ALT=x86_64; A_FNM=linux; A_MISE=x64 ;;
+  aarch64) A_GNU=aarch64; A_ALT=arm64;  A_FNM=arm64; A_MISE=arm64 ;;
   *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
@@ -70,6 +76,14 @@ export PATH
 if [ -x "$FNM_DIR/fnm" ]; then
   if [ -n "${ZSH_VERSION:-}" ]; then eval "$("$FNM_DIR/fnm" env --shell zsh)"
   elif [ -n "${BASH_VERSION:-}" ]; then eval "$("$FNM_DIR/fnm" env --shell bash)"
+  fi
+fi
+# mise: activates per-project tool versions as you cd. It only takes over a tool
+# (node included) in a directory whose mise config names it; elsewhere the fnm
+# default above stays in charge.
+if command -v mise >/dev/null 2>&1; then
+  if [ -n "${ZSH_VERSION:-}" ]; then eval "$(mise activate zsh)"
+  elif [ -n "${BASH_VERSION:-}" ]; then eval "$(mise activate bash)"
   fi
 fi
 
@@ -123,7 +137,7 @@ group_base() {
 }
 
 group_node() {
-  step "fnm + Node.js ${NODE_MAJOR}"
+  step "fnm + Node.js (${NODE_VERSION})"
   # fnm's own installer lives on fnm.vercel.app, which isn't allowlisted; the
   # release zip on GitHub is the same binary.
   if [ ! -x "$FNM_DIR/fnm" ]; then
@@ -133,12 +147,19 @@ group_node() {
     chmod 0755 "$FNM_DIR/fnm"
   fi
   export FNM_DIR
-  if [ -x "$FNM_DIR/aliases/default/bin/node" ]; then
-    echo "already installed: node $("$FNM_DIR/aliases/default/bin/node" --version)"
+  # Not skipped when a Node is already there: this is how you move up (or to a
+  # chosen line). `fnm install` is a no-op for a version that is already
+  # installed, and older versions stay installed for `fnm use`.
+  local before=""
+  [ ! -x "$FNM_DIR/aliases/default/bin/node" ] || before="$("$FNM_DIR/aliases/default/bin/node" --version)"
+  if [ "$NODE_VERSION" = lts ]; then
+    "$FNM_DIR/fnm" install --lts
+    "$FNM_DIR/fnm" default lts-latest
   else
-    "$FNM_DIR/fnm" install "$NODE_MAJOR"
-    "$FNM_DIR/fnm" default "$NODE_MAJOR"
+    "$FNM_DIR/fnm" install "$NODE_VERSION"
+    "$FNM_DIR/fnm" default "$NODE_VERSION"
   fi
+  echo "default node: $("$FNM_DIR/aliases/default/bin/node" --version)${before:+ (was $before)}"
 
   step "Bun"
   if [ -x "$HOME/.bun/bin/bun" ]; then echo "already installed"; else
@@ -152,6 +173,22 @@ group_node() {
       cat "$TMP/bun.log" >&2
       echo "FAILED: bun did not install (installer output above)" >&2; exit 1
     fi
+  fi
+}
+
+group_mise() {
+  step "mise"
+  # mise's own installer lives on mise.run, which isn't allowlisted; the release
+  # binary on GitHub is the same thing. Its file name carries the version, so
+  # resolve the latest tag first.
+  if have mise; then echo "already installed: $(mise --version | head -1)"; else
+    local tag
+    tag="$(curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o /dev/null -w '%{url_effective}' \
+             https://github.com/jdx/mise/releases/latest)"
+    tag="${tag##*/}"
+    [[ "$tag" =~ ^v[0-9][0-9.]*$ ]] || { echo "FAILED: couldn't resolve the latest mise release (got '$tag')" >&2; exit 1; }
+    fetch "https://github.com/jdx/mise/releases/download/${tag}/mise-${tag}-linux-${A_MISE}" "$TMP/mise"
+    install -m 0755 "$TMP/mise" "$BIN/mise"
   fi
 }
 
@@ -215,19 +252,19 @@ group_git() {
 }
 
 write_rc
-[ $# -gt 0 ] || set -- base node agents git
+[ $# -gt 0 ] || set -- base node mise agents git
 # Re-source after each group: a later group needs the PATH entries (node, npm,
 # bun) that only exist once an earlier one has run.
 # shellcheck disable=SC1090
 for g in "$@"; do
   case "$g" in
-    base|node|agents|git) "group_$g"; . "$RC" ;;
-    *) echo "unknown group: $g (base | node | agents | git)" >&2; exit 1 ;;
+    base|node|mise|agents|git) "group_$g"; . "$RC" ;;
+    *) echo "unknown group: $g (base | node | mise | agents | git)" >&2; exit 1 ;;
   esac
 done
 
 step "Done"
-for t in zsh rg fzf jq tmux nvim delta shellcheck hadolint node npm bun claude codex gemini agent; do
-  if have "$t"; then printf '  %-11s %s\n' "$t" "$(command -v "$t")"; else printf '  %-11s MISSING\n' "$t"; fi
+for t in zsh rg fzf jq tmux nvim delta shellcheck hadolint node npm bun mise claude codex gemini agent; do
+  if have "$t"; then printf '  %-11s %s\n' "$t" "$(type -P "$t" || command -v "$t")"; else printf '  %-11s MISSING\n' "$t"; fi
 done
 echo "Open a new shell (or: . $RC) to pick up PATH and the yolo-* aliases."

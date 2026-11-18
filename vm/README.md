@@ -156,11 +156,12 @@ reachable from localhost only (see Known limitations), retired in a follow-up.
 
 `guest-setup.sh` (root, required) installs the minimum: git, `gh`, Docker, Claude
 Code and the `dev` user. `guest-tools.sh` (as `dev`, optional) adds what the
-container image bakes in — shell tools, compilers, Python, Node, Bun, linters,
-Neovim, the Codex/Gemini/Cursor CLIs and the `yolo-*` aliases — in four groups
-(`base`, `node`, `agents`, `git`). Both are idempotent and are run by hand inside
+container image bakes in — shell tools, compilers, Python, Node (current LTS,
+switchable), Bun, mise, linters, Neovim, the Codex/Gemini/Cursor CLIs and the
+`yolo-*` aliases — in five groups (`base`, `node`, `mise`, `agents`, `git`). Both are idempotent and are run by hand inside
 the VM; see [QUICKSTART.md](QUICKSTART.md). Everything `guest-tools.sh`
-downloads is already on `allowlist.conf`.
+downloads is on `allowlist.conf`, which also carries the two hosts mise itself
+needs (`mise-versions.jdx.dev`, `tuf-repo-cdn.sigstore.dev`).
 
 ## Adding hosts
 

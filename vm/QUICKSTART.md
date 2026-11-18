@@ -125,11 +125,29 @@ bash ~/workspace/safeclaude/vm/guest-tools.sh agents   # or one group
 | Group | Installs |
 | --- | --- |
 | `base` | zsh, fzf, ripgrep, jq, tmux, tree, htop, build-essential, Python venv/pip, shellcheck, hadolint, git-delta, Neovim |
-| `node` | Node.js (via fnm) and Bun |
+| `node` | Node.js (via fnm; the current LTS line by default) and Bun |
+| `mise` | [mise](https://mise.jdx.dev), for per-project tool versions (`mise.toml` / `.tool-versions`) |
 | `agents` | Codex, Gemini and Cursor CLIs, plus the `yolo-claude` / `yolo-codex` / `yolo-gemini` / `yolo-cursor` aliases. Also pre-accepts Claude Code's bypass-permissions prompt |
 | `git` | delta as the pager; `user.name` / `user.email` if you pass `GIT_USER_NAME` / `GIT_USER_EMAIL` |
 
-Open a new shell afterwards to pick up `PATH` and the aliases. Things to know:
+Open a new shell afterwards to pick up `PATH` and the aliases.
+
+**Node versions.** The default is the newest LTS line. Re-running the `node`
+group is how you move:
+
+```bash
+bash vm/guest-tools.sh node                   # move the default up to the newest LTS
+NODE_VERSION=28 bash vm/guest-tools.sh node   # make a specific line the default
+fnm install 24 && fnm use 24                  # switch only the current shell
+fnm ls                                        # what's installed
+```
+
+Older versions stay installed, and globally installed npm tools (`gemini`) live
+outside any one Node version, so they survive a switch. For a version pinned
+per project, put it in the repo's `mise.toml`; mise takes over Node only inside
+a directory whose config names it.
+
+Things to know:
 
 - **It changes a Claude Code safety default.** The `agents` group sets
   `skipDangerousModePermissionPrompt` in `~/.claude/settings.json`, so
@@ -139,6 +157,10 @@ Open a new shell afterwards to pick up `PATH` and the aliases. Things to know:
   latest Neovim, fnm and Codex releases with no checksum check, as the
   container image does. The egress allowlist limits where code can send data,
   not what runs inside the VM.
+- **mise fetches tools from wherever they are published.** Its version index
+  and the common sources (GitHub releases, `nodejs.org`, `dl.google.com`) are
+  on the allowlist; a tool hosted elsewhere fails with "Could not resolve
+  host" until you `devvm allow` that host.
 - **Don't edit `~/.config/devvm/shellrc.sh`.** It holds the `PATH` entries and
   aliases and is rewritten on every run; put your own settings in `~/.bashrc`
   or `~/.zshrc`.
