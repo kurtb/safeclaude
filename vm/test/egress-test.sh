@@ -6,9 +6,9 @@
 #   sudo vm/test/egress-test.sh           # brings the rig up, tests, leaves it up
 #   sudo vm/test/egress-test.sh --down    # ...and tears it down afterwards
 #
-# Needs real network access to a few allowlisted hosts (pypi.org,
-# registry.npmjs.org, api.github.com, archive.ubuntu.com), plus dig and python3,
-# and port 80 free on this machine's loopback.
+# Uses a namespace-local HTTP/TLS origin and DNS fixture. RIG_LIVE=1 also
+# checks one external allowlisted host. The loopback HTTP port must be free.
+export RIG_FIXTURE=1
 set -uo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root: sudo $0" >&2; exit 1; }
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,7 +19,7 @@ HOSTPUB="${RIG_HOSTPUB:-192.0.9.1}"
 
 "$RIG" up >/dev/null || { echo "rig failed to come up" >&2; exit 1; }
 g() { "$RIG" run "$@"; }                     # run as the guest
-code() { g curl -sS -o /dev/null --max-time 12 -w '%{http_code}' "$@" 2>/dev/null; }
+code() { g curl --cacert /run/devvm-rig/cert -sS -o /dev/null --max-time 12 -w '%{http_code}' "$@" 2>/dev/null; }
 
 pass=0; fail=0
 ok()  { pass=$((pass+1)); printf '  ok    %s\n' "$1"; }
@@ -34,18 +34,21 @@ expect() {
   else bad "$desc" "expected HTTP $want, got $got"; fi
 }
 
+if [[ ${RIG_LIVE:-0} == 1 ]]; then
+  if g curl -fsS --max-time 20 https://github.com/robots.txt >/dev/null; then ok "live GitHub"; else bad "live GitHub" "request failed"; fi
+fi
 echo "Allowed names work"
-expect "HTTPS to an allowlisted host"                  200 https://pypi.org/simple/pip/
-expect "HTTP to an allowlisted host (apt mirror)"      200 http://archive.ubuntu.com/ubuntu/dists/noble/Release
+expect "HTTPS to an allowlisted host"                  200 https://allowed.test/
+expect "HTTP to an allowlisted host (apt mirror)"      200 http://allowed.test/
 
 echo "The guest's choice of IP never matters (rotation-proof, and no --resolve bypass)"
-expect "allowed name aimed at a different IP of the same CDN"  200 --resolve pypi.org:443:151.101.1.63 https://pypi.org/simple/pip/
-expect "allowed name aimed at an unrelated IP (1.2.3.4)"       200 --resolve pypi.org:443:1.2.3.4 https://pypi.org/simple/pip/
-expect "allowed name aimed at the metadata IP"                 200 --resolve pypi.org:443:169.254.169.254 https://pypi.org/simple/pip/
-expect "allowed HTTP name aimed at an unrelated IP"            200 --resolve archive.ubuntu.com:80:1.2.3.4 http://archive.ubuntu.com/ubuntu/dists/noble/Release
+expect "allowed name aimed at a different IP of the same CDN"  200 --resolve allowed.test:443:151.101.1.63 https://allowed.test/
+expect "allowed name aimed at an unrelated IP (1.2.3.4)"       200 --resolve allowed.test:443:1.2.3.4 https://allowed.test/
+expect "allowed name aimed at the metadata IP"                 200 --resolve allowed.test:443:169.254.169.254 https://allowed.test/
+expect "allowed HTTP name aimed at an unrelated IP"            200 --resolve allowed.test:80:1.2.3.4 http://allowed.test/
 n=0; for _ in 1 2 3 4 5 6 7 8 9 10; do
   ip="$((RANDOM%200+11)).$((RANDOM%250)).$((RANDOM%250)).7"
-  [ "$(code --resolve registry.npmjs.org:443:"$ip" https://registry.npmjs.org/)" = 200 ] && n=$((n+1))
+  [ "$(code --resolve allowed.test:443:"$ip" https://allowed.test/)" = 200 ] && n=$((n+1))
 done
 if [ "$n" = 10 ]; then ok "10 connections to one name, each aimed at a random IP"; else bad "10 connections aimed at random IPs" "$n/10 succeeded"; fi
 
@@ -54,19 +57,19 @@ expect "DNS does not resolve a non-allowlisted name"           blocked https://e
 expect "non-allowlisted SNI aimed at an allowed host's IP"     blocked --resolve example.com:443:151.101.64.223 https://example.com/
 expect "TLS with no SNI"                                       blocked -k https://151.101.64.223/
 expect "plain HTTP sent to port 443"                           blocked http://151.101.64.223:443/
-expect "HTTP with a non-allowlisted Host"                      403 -H 'Host: example.com' http://archive.ubuntu.com/
+expect "HTTP with a non-allowlisted Host"                      403 -H 'Host: example.com' http://allowed.test/
 # Raw requests: curl folds repeated Host headers into one, so it can't send these.
 raw() { g python3 -c 'import socket,sys
 s=socket.create_connection(("1.2.3.4",80),timeout=8); s.sendall(sys.argv[1].encode()); print(s.recv(64).split()[1].decode())' "$1" 2>/dev/null; }
 expect_raw() { local got; got="$(raw "$3")"; if [ "${got:-000}" = "$2" ]; then ok "$1"; else bad "$1" "expected HTTP $2, got ${got:-000}"; fi; }
-expect_raw "two Host headers, allowed then not"                400 $'GET / HTTP/1.1\r\nHost: archive.ubuntu.com\r\nHost: example.com\r\nConnection: close\r\n\r\n'
-expect_raw "two Host headers, not allowed then allowed"        400 $'GET / HTTP/1.1\r\nHost: example.com\r\nHost: archive.ubuntu.com\r\nConnection: close\r\n\r\n'
-expect_raw "request line naming a different host than Host"    400 $'GET http://example.com/ HTTP/1.1\r\nHost: archive.ubuntu.com\r\nConnection: close\r\n\r\n'
+expect_raw "two Host headers, allowed then not"                400 $'GET / HTTP/1.1\r\nHost: allowed.test\r\nHost: example.com\r\nConnection: close\r\n\r\n'
+expect_raw "two Host headers, not allowed then allowed"        400 $'GET / HTTP/1.1\r\nHost: example.com\r\nHost: allowed.test\r\nConnection: close\r\n\r\n'
+expect_raw "request line naming a different host than Host"    400 $'GET http://example.com/ HTTP/1.1\r\nHost: allowed.test\r\nConnection: close\r\n\r\n'
 expect_raw "no Host header"                                    400 $'GET / HTTP/1.1\r\nConnection: close\r\n\r\n'
 # HTTP/2 without TLS. Exactly 403: the proxy itself refused the name. (If
 # curl had no HTTP/2 support the option would fail and this would read 000.)
-expect "cleartext HTTP/2 with a non-allowlisted name"          403 --http2-prior-knowledge -H 'Host: example.com' http://archive.ubuntu.com/
-expect "using the HTTP port as a CONNECT proxy"                blocked -p -x http://archive.ubuntu.com:80 https://example.com/
+expect "cleartext HTTP/2 with a non-allowlisted name"          403 --http2-prior-knowledge -H 'Host: example.com' http://allowed.test/
+expect "using the HTTP port as a CONNECT proxy"                blocked -p -x http://allowed.test:80 https://example.com/
 
 echo "An allowlisted name cannot be used to reach private addresses (SSRF)"
 # A canary web server on the HOST's loopback. If the proxy ever connected to a
@@ -97,9 +100,9 @@ if tcp 151.101.64.223 8443; then bad "port 8443 to the internet" "connected"; el
 if tcp "$PROXY_IP" 22;    then bad "host SSH via the bridge IP" "connected"; else ok "host services on the bridge IP are blocked"; fi
 # A real query both times: the first shows the guest's dig works at all, so
 # the second failing means the path is blocked, not that the probe is broken.
-if [ -n "$(g dig +short +tries=1 +time=3 @"$PROXY_IP" pypi.org A 2>/dev/null)" ]; then ok "DNS through the allowlist resolver answers"; else bad "DNS through the allowlist resolver" "no answer"; fi
-if g dig +tries=1 +time=3 @1.1.1.1 pypi.org A >/dev/null 2>&1; then bad "direct DNS to 1.1.1.1" "got a reply"; else ok "direct DNS (UDP) to an outside resolver is blocked"; fi
-if g dig +tcp +tries=1 +time=3 @1.1.1.1 pypi.org A >/dev/null 2>&1; then bad "direct DNS over TCP to 1.1.1.1" "got a reply"; else ok "direct DNS (TCP) to an outside resolver is blocked"; fi
+if [ -n "$(g dig +short +tries=1 +time=3 @"$PROXY_IP" allowed.test A 2>/dev/null)" ]; then ok "DNS through the allowlist resolver answers"; else bad "DNS through the allowlist resolver" "no answer"; fi
+if g dig +tries=1 +time=3 @1.1.1.1 allowed.test A >/dev/null 2>&1; then bad "direct DNS to 1.1.1.1" "got a reply"; else ok "direct DNS (UDP) to an outside resolver is blocked"; fi
+if g dig +tcp +tries=1 +time=3 @1.1.1.1 allowed.test A >/dev/null 2>&1; then bad "direct DNS over TCP to 1.1.1.1" "got a reply"; else ok "direct DNS (TCP) to an outside resolver is blocked"; fi
 
 echo "Allowlist changes reach the running proxy"
 # The rig's apply, as `devvm allow` would run it.
@@ -109,14 +112,14 @@ started() { systemctl show -p ActiveEnterTimestampMonotonic --value devvm-proxy.
 # hpid: a guest connection that stays open (TLS handshake done, then idle).
 t0="$(started)"; apply
 if [ "$(started)" = "$t0" ]; then ok "re-applying an unchanged list leaves the proxy alone"; else bad "unchanged re-apply" "proxy was restarted"; fi
-g timeout 60 openssl s_client -connect 1.2.3.4:443 -servername pypi.org -quiet < <(sleep 55) >/dev/null 2>&1 & hpid=$!
+g timeout 60 openssl s_client -connect 1.2.3.4:443 -servername allowed.test -quiet < <(sleep 55) >/dev/null 2>&1 & hpid=$!
 sleep 3
 echo example.org >> /etc/devvm/allowlist.local; apply; sleep 1
 if [ "$(started)" = "$t0" ] && kill -0 "$hpid" 2>/dev/null; then ok "adding a host reloads; an open connection survives"; else bad "adding a host" "proxy restarted or the open connection died"; fi
 sed -i '/^example\.org$/d' /etc/devvm/allowlist.local; apply; sleep 2
 if [ "$(started)" != "$t0" ]; then ok "removing a host restarts the proxy"; else bad "removing a host" "proxy was not restarted"; fi
 if kill -0 "$hpid" 2>/dev/null; then bad "removing a host cuts open connections" "the connection is still open"; kill "$hpid" 2>/dev/null; else ok "removing a host cuts open connections"; fi
-expect "the proxy works after the restart"                     200 https://pypi.org/simple/pip/
+expect "the proxy works after the restart"                     200 https://allowed.test/
 # An apply that dies after publishing the files but before the proxy picks
 # them up (here: a bad subnet makes nft fail) must not lose the change.
 echo example.org >> /etc/devvm/allowlist.local; apply
@@ -132,9 +135,9 @@ touch /usr/local/lib/devvm/.egress-rig
 
 echo "Fails closed"
 systemctl stop devvm-proxy.service
-expect "with the proxy stopped, an allowed host is unreachable" blocked https://pypi.org/simple/pip/
+expect "with the proxy stopped, an allowed host is unreachable" blocked https://allowed.test/
 systemctl start devvm-proxy.service; sleep 1
-expect "and reachable again once it is back"                    200 https://pypi.org/simple/pip/
+expect "and reachable again once it is back"                    200 https://allowed.test/
 
 echo
 echo "$pass passed, $fail failed"

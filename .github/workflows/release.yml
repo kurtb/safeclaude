@@ -118,7 +118,7 @@ jobs:
           NEXT: ${{ steps.ver.outputs.next }}
         run: |
           set -euo pipefail
-          git archive --format=tar.gz --prefix=devvm/ -o devvm.tar.gz HEAD:vm
+          git archive --format=tar.gz --prefix=devvm/ -o devvm.tar.gz "$NEXT:vm"
           sha256sum devvm.tar.gz > devvm.tar.gz.sha256
           gh release create "$NEXT" \
             --verify-tag \

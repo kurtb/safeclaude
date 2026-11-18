@@ -45,4 +45,6 @@ REPO
   apt_update
 fi
 /usr/bin/python3 -IB "$here/check-packages.py" --candidates
-apt_install incus incus-client haproxy nftables dnsmasq-base jq bind9-dnsutils git
+packages=(incus incus-client haproxy nftables dnsmasq-base jq bind9-dnsutils)
+command -v git >/dev/null || packages+=(git)
+apt_install "${packages[@]}"

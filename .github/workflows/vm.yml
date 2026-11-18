@@ -17,6 +17,10 @@ jobs:
       - uses: actions/checkout@v5
       - run: sudo apt-get update && sudo apt-get install -y shellcheck haproxy jq nftables
       - run: vm/test/run.sh
+      - name: Test host egress with local HTTP, TLS and DNS fixtures
+        run: |
+          sudo apt-get install -y dnsmasq-base bind9-dnsutils
+          sudo vm/test/egress-test.sh --down
 
   incus:
     strategy:

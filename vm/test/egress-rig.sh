@@ -39,6 +39,32 @@ MARK=/usr/local/lib/devvm/.egress-rig     # "this install belongs to the rig"
 UPSTREAM="${RIG_DNS_UPSTREAM:-$(awk '/^nameserver/{print $2; exit}' /run/systemd/resolve/resolv.conf 2>/dev/null || true)}"
 UPSTREAM="${UPSTREAM:-1.1.1.1}"
 
+# The HTTP/TLS origin only has a connected route back to the host. Its address
+# is outside the production bogon list and exists only on this private link.
+origin_ns=devvmrig-origin
+origin_ip=192.0.9.6
+fixture_origin() {
+  if [[ -e "$RUN/fixture.ready" ]]; then return; fi
+  ip netns add "$origin_ns"
+  touch "$RUN/owns-origin"
+  ip link add rigorigin0 type veth peer name eth0 netns "$origin_ns"
+  ip addr add 192.0.9.5/30 dev rigorigin0
+  ip link set rigorigin0 up
+  ip -n "$origin_ns" addr add "$origin_ip/30" dev eth0
+  ip -n "$origin_ns" link set eth0 up
+  ip -n "$origin_ns" link set lo up
+  mkdir -p "$RUN/www"
+  echo fixture > "$RUN/www/index.html"
+  openssl req -new -x509 -newkey rsa:2048 -nodes -days 1 \
+    -subj /CN=allowed.test -addext subjectAltName=DNS:allowed.test \
+    -keyout "$RUN/key" -out "$RUN/cert" >/dev/null 2>&1
+  ip netns exec "$origin_ns" python3 -m http.server 80 --bind "$origin_ip" \
+    --directory "$RUN/www" >"$RUN/http.log" 2>&1 </dev/null &
+  ip netns exec "$origin_ns" openssl s_server -accept "$origin_ip:443" \
+    -cert "$RUN/cert" -key "$RUN/key" -www -quiet >"$RUN/tls.log" 2>&1 </dev/null &
+  touch "$RUN/fixture.ready"
+}
+
 # True when this machine has a devvm install that the rig did not create.
 real_install() {
   [ ! -e "$MARK" ] && { [ -e /usr/local/lib/devvm ] || [ -e /etc/devvm ] \
@@ -50,6 +76,10 @@ down() {
   if real_install; then
     echo "refusing: this machine has a devvm install the rig did not create; not touching it" >&2
     exit 1
+  fi
+  if [[ -e $RUN/owns-origin ]]; then
+    ip netns pids "$origin_ns" | xargs -r kill || true
+    ip netns del "$origin_ns"
   fi
   if [ -f "$RUN/dnsmasq.pid" ]; then kill "$(cat "$RUN/dnsmasq.pid")" 2>/dev/null || true; fi
   if [ -f "$RUN/proxydns.pid" ]; then kill "$(cat "$RUN/proxydns.pid")" 2>/dev/null || true; fi
@@ -100,6 +130,22 @@ up() {
   # Install the egress files root-owned, exactly as on a real host.
   "$VM/host/install-egress.sh" >/dev/null
 
+  install -d -o root -g root -m 0755 /etc/devvm
+  if [ ! -e /etc/devvm/allowlist.local ]; then touch "$RUN/made-local"; fi
+  if [ -e "$RUN/made-local" ]; then
+    printf '%s\n' ssrf-loopback.test ssrf-bridge.test ssrf-metadata.test ssrf-v6.test ssrf-hostpub.test > /etc/devvm/allowlist.local
+    chmod 0644 /etc/devvm/allowlist.local
+  fi
+  local guest_upstream="$UPSTREAM"
+  local resolver_args=("--server=$UPSTREAM")
+  if [[ ${RIG_FIXTURE:-0} == 1 ]]; then
+    fixture_origin
+    grep -qxF allowed.test /etc/devvm/allowlist.local || echo allowed.test >> /etc/devvm/allowlist.local
+    guest_upstream=127.0.0.1#5399
+    resolver_args=("--host-record=allowed.test,$origin_ip")
+    if [[ ${RIG_LIVE:-0} == 1 ]]; then resolver_args+=("--server=$UPSTREAM"); fi
+  fi
+
   # Allowlist-only DNS: the same lines the Incus driver puts in raw.dnsmasq.
   if [ -f "$RUN/dnsmasq.pid" ]; then kill "$(cat "$RUN/dnsmasq.pid")" 2>/dev/null || true; fi
   {
@@ -107,7 +153,7 @@ up() {
     { cat /usr/local/lib/devvm/allowlist.conf; echo
       if [ -r /etc/devvm/allowlist.local ]; then cat /etc/devvm/allowlist.local; fi; } \
       | grep -vE '^[[:space:]]*#|^[[:space:]]*$' | sed 's/^cidr://' | LC_ALL=C sort -u \
-      | while IFS= read -r d; do echo "server=/$d/$UPSTREAM"; done
+      | while IFS= read -r d; do echo "server=/$d/$guest_upstream"; done
   } > "$RUN/dnsmasq.conf"
   dnsmasq --conf-file="$RUN/dnsmasq.conf" --pid-file="$RUN/dnsmasq.pid" \
     --interface="$DEVVM_NET" --bind-interfaces --except-interface=lo \
@@ -118,19 +164,14 @@ up() {
   # connect to. They are put on the allowlist (below) so that the only thing
   # standing between the guest and those addresses is the proxy's bogon check.
   if [ -f "$RUN/proxydns.pid" ]; then kill "$(cat "$RUN/proxydns.pid")" 2>/dev/null || true; fi
-  dnsmasq --pid-file="$RUN/proxydns.pid" --no-resolv --no-hosts --server="$UPSTREAM" \
+  dnsmasq --pid-file="$RUN/proxydns.pid" --no-resolv --no-hosts "${resolver_args[@]}" \
     --listen-address=127.0.0.1 --port=5399 --bind-interfaces --cache-size=0 \
     --address=/ssrf-loopback.test/127.0.0.1 \
     --address=/ssrf-bridge.test/"$DEVVM_PROXY_IP" \
     --address=/ssrf-metadata.test/169.254.169.254 \
     --address=/ssrf-v6.test/"$RIG_V6" \
     --address=/ssrf-hostpub.test/"$RIG_HOSTPUB"
-  install -d -o root -g root -m 0755 /etc/devvm
-  if [ ! -e /etc/devvm/allowlist.local ]; then touch "$RUN/made-local"; fi
-  if [ -e "$RUN/made-local" ]; then
-    printf '%s\n' ssrf-loopback.test ssrf-bridge.test ssrf-metadata.test ssrf-v6.test ssrf-hostpub.test > /etc/devvm/allowlist.local
-    chmod 0644 /etc/devvm/allowlist.local
-  fi
+
 
   DEVVM_PROXY_DNS=127.0.0.1:5399 /usr/local/lib/devvm/host-egress.sh
   echo "rig up: guest $GUEST_IP on $DEVVM_NET, DNS upstream $UPSTREAM"
