@@ -10,6 +10,7 @@
 # is installed at boot; vm/guest-setup.sh is run by hand inside it.
 #
 # Verbs (from ../devvm.sh):  ensure <name> <repo> <vmdir> | shell | stop | rm
+#                            | refresh (re-apply the allowlist; no VM touched)
 #
 # STATUS: validated live on ARM Incus 7.5.1 + KVM (create, boot, clone, egress
 # smoke test). Spots still needing a live check are marked VERIFY.
@@ -32,8 +33,12 @@ build_raw_dnsmasq() {
     [ -r "$c" ] && { conf="$c"; break; }
   done
   [ -n "$conf" ] || { echo "no allowlist.conf found for DNS (run install-host.sh)" >&2; return 1; }
+  # Plus this host's own extras (`devvm allow`), the same file host-egress.sh
+  # merges, so DNS, the SNI proxy and the IP pin stay on one list.
+  local extra=/etc/devvm/allowlist.local
   echo "no-resolv"
-  grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$conf" | sed 's/^cidr://' | sort -u \
+  { cat "$conf"; echo; if [ -r "$extra" ]; then cat "$extra"; fi; } \
+    | grep -vE '^[[:space:]]*#|^[[:space:]]*$' | sed 's/^cidr://' | sort -u \
     | while IFS= read -r d; do [ -n "$d" ] && echo "server=/$d/${DEVVM_DNS_UPSTREAM:-1.1.1.1}"; done
 }
 
@@ -114,12 +119,20 @@ wait_agent() {
   echo "WARNING: guest agent not ready after 120s (is the VM running? incus list)" >&2
 }
 
-cmd_ensure() {
-  need; ensure_network; create_if_absent
+# Re-apply the allowlist to DNS + proxy + IP pin. Touches no VM, so running
+# guests pick the change up live. Also re-resolves every host, which is the fix
+# when a pinned IP has gone stale.
+apply_egress() {
+  ensure_network
   # Run the ROOT-OWNED installed copy, not the checkout.
   local egress=/usr/local/lib/devvm/host-egress.sh
   [ -x "$egress" ] || { echo "host egress not installed; run: sudo \"$VMDIR/install-host.sh\"" >&2; exit 1; }
-  sudo "$egress"                                # host egress re-applied every run (never fail open)
+  sudo "$egress"
+}
+
+cmd_ensure() {
+  need; ensure_network; create_if_absent
+  apply_egress                                  # host egress re-applied every run (never fail open)
   is_running || incus start "$name"
   wait_agent
   # Nothing is installed at boot: a new VM is a bare machine. Say how to set it up.
@@ -142,6 +155,7 @@ cmd_shell() {
 
 case "$verb" in
   ensure) cmd_ensure ;;
+  refresh) need; apply_egress ;;
   shell)  cmd_shell ;;
   stop)   need; incus stop "$name" ;;
   rm)     need; incus delete -f "$name" ;;

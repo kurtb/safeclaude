@@ -221,14 +221,19 @@ dotclaude/
 - GitHub's published IP ranges (`web`, `api`, `git`, `pages` from `api.github.com/meta` — `pages` makes any `*.github.io` reachable)
 - Anthropic, OpenAI, Google AI / gcloud endpoints — including `mcp-proxy.anthropic.com`, which carries your claude.ai connectors (Linear, Claude Docs, Gmail, …); see the note below
 - Langfuse (LLM observability — `langfuse.com`, `cloud.langfuse.com`, `us.cloud.langfuse.com`)
-- npm, PyPI, Bun, Ubuntu apt mirrors
-- Pulumi, GitHub auxiliary CDNs (objects, raw, codeload), GitHub Pages
+- npm, PyPI, Bun, Node.js downloads (`nodejs.org`, for `fnm install`), Ubuntu apt mirrors
+- Pulumi, GitHub auxiliary CDNs (objects, raw, codeload, `release-assets.githubusercontent.com` for release downloads, `pkg-containers.githubusercontent.com` for ghcr.io layers), GitHub Pages
 - Kubernetes (`dl.k8s.io`, `registry.k8s.io`), Helm (`get.helm.sh`), Istio (`istio-release.storage.googleapis.com`)
-- Container registries (`ghcr.io`, `quay.io`, `docker.io`)
+- Container registries (`ghcr.io`, `quay.io` and its `cdn*.quay.io` blob CDNs, `docker.io`) and `cdn.registry.k8s.io` for `registry.k8s.io` layers
 - Tailscale: package mirror, coordination/login (`controlplane`/`login.tailscale.com`), and the DERP relay IPs (fetched from the published DERP map — see [Tailscale](#tailscale))
 - Localhost, your Docker host network, DNS, SSH
 
 Egress to anything else is rejected.
+
+The container's allowlist is **IP-level**: each name is resolved at container
+start and its addresses are allowed, so a CDN-fronted host also admits whatever
+else shares those addresses. (The [dev-box VM](vm/README.md) additionally checks
+the TLS server name.)
 
 > **Connectors are an egress path.** Claude Code reaches claude.ai connectors
 > (remote MCP servers) through one host, `mcp-proxy.anthropic.com`; Anthropic's
@@ -265,6 +270,9 @@ it for all of them, and a single list is far simpler than per-project ones.
 **No extra domains?** Nothing special happens. With an empty or absent list,
 `safeclaude build` bakes an empty file and the firewall just uses its built-in
 allowlist — there's no mount and no missing-file edge case to worry about.
+
+**Using the dev-box VM instead?** The equivalent there is `devvm allow <host>`,
+which applies live — see [vm/README.md](vm/README.md#adding-hosts).
 
 **Why build-time and not a live runtime knob?** The allowlist source has to be
 something a `--dangerously-skip-permissions` agent inside the container *cannot*

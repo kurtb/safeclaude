@@ -86,8 +86,8 @@ claimed solved:
   `statsig.com`, gists/raw) are usable as exfil channels by a hostile agent.
 - **CDN drift vs. the dest-IP pin.** The pin is a `dig` snapshot; CDN-fronted
   hosts (e.g. `*.jfrog.io`) can rotate to IPs not in the set and get dropped
-  intermittently. Fails *closed* (blocks, never leaks). Workaround: re-run
-  `devvm up`, which re-resolves the allowlist. Fix in progress:
+  intermittently. Fails *closed* (blocks, never leaks). Workaround:
+  `devvm allow --refresh` (or `devvm up`), which re-resolves the allowlist. Fix in progress:
   re-resolve the allowlisted name in the proxy per connection so rotation is
   tracked live (VEC-231).
 - **Cross-project network isolation.** All project VMs currently share one
@@ -150,6 +150,43 @@ reachable from localhost only (see Known limitations), retired in a follow-up.
 
 - Host nested virt on (`kvm_intel/amd nested=1`) for minikube `kvm2`, then
   `minikube start --driver=docker` inside the guest.
+
+## Adding hosts
+
+Sooner or later a build wants a host that isn't on `allowlist.conf`. The symptom
+inside the VM is `Could not resolve host` (allowlist-only DNS). On the **host**:
+
+```bash
+devvm allow crates.io static.crates.io   # add + apply live
+devvm allow                              # list your extras
+devvm allow --rm crates.io               # remove
+devvm allow --refresh                    # re-resolve the whole list, change nothing
+```
+
+- Extras go in `/etc/devvm/allowlist.local` — root-owned, on the host, outside
+  the checkout — and are merged with `allowlist.conf` by all three layers (DNS,
+  SNI proxy, IP pin). Nothing in a guest can reach that file, so an agent can
+  tell you which host it needs but cannot allow it itself. The file survives
+  `install-host.sh` re-runs.
+- It applies **live**: no VM restart, and it never touches a VM. It is
+  **machine-wide** — every devvm VM shares the one bridge and the one list.
+- **Exact host names only**, no wildcards: each layer works per name. A pasted
+  URL is trimmed to its host. Prefix `cidr:` (`devvm allow cidr:get.helm.sh`) to
+  pin the host's whole `/24` when its IP rotates within one subnet.
+- A download often needs a *second* host — the one it redirects to (a blob CDN,
+  a regional mirror). `curl -sIL <url> | grep -i '^location'` in the VM shows
+  it. Example: `registry.k8s.io` redirects manifests to a regional
+  `<region>-docker.pkg.dev`, which depends on where you are and so isn't on the
+  base list.
+- `--refresh` is also the fix for an *allowed* host that fails with `Couldn't
+  connect to server`: its IP rotated out of the pinned snapshot (see "CDN drift"
+  above).
+- A host everyone needs — including a redirect target like the blob CDNs above —
+  belongs in `allowlist.conf` via a PR (a **minor** bump), followed by
+  `sudo ./install-host.sh`.
+- "Already allowed" is judged against the **installed** list
+  (`/usr/local/lib/devvm/allowlist.conf`), not the checkout: after pulling a
+  newer `allowlist.conf`, re-run `sudo ./install-host.sh` to put it in force.
 
 ## Allowlist / posture
 

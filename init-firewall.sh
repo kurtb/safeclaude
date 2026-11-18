@@ -86,7 +86,6 @@ ALLOWED_DOMAINS=(
     "claude.ai"
     "platform.claude.com"   # `claude login` (OAuth)
     "mcp-proxy.anthropic.com"   # claude.ai connectors (remote MCP via Anthropic's proxy)
-    "statsig.anthropic.com"
     "statsig.com"
     "sentry.io"
 
@@ -106,7 +105,7 @@ ALLOWED_DOMAINS=(
     # Cursor CLI (install + auto-update)
     "cursor.com"
     "api2.cursor.sh"
-    "download.cursor.sh"
+    "downloads.cursor.com"
 
     # Langfuse (LLM observability — docs + both cloud regions; self-hosters add
     # their own host)
@@ -122,8 +121,13 @@ ALLOWED_DOMAINS=(
     # Bun (self-update / version check; installs come from npm + GitHub)
     "bun.sh"
 
+    # Node.js release downloads (`fnm install <version>`, node-gyp headers)
+    "nodejs.org"
+
     # GitHub auxiliary (CDN + raw + downloads not covered by api.github.com/meta)
     "objects.githubusercontent.com"
+    "release-assets.githubusercontent.com"   # release downloads redirect here
+    "pkg-containers.githubusercontent.com"   # ghcr.io image layers
     "codeload.github.com"
     "raw.githubusercontent.com"
 
@@ -147,8 +151,8 @@ ALLOWED_DOMAINS=(
 
     # Kubernetes + Helm
     "dl.k8s.io"
-    "cdn.dl.k8s.io"
     "registry.k8s.io"
+    "cdn.registry.k8s.io"   # registry.k8s.io image layers
     "get.helm.sh"
 
     # Istio (release binaries + Helm charts, hosted on GCS)
@@ -157,6 +161,10 @@ ALLOWED_DOMAINS=(
     # Container registries
     "ghcr.io"
     "quay.io"
+    "cdn.quay.io"           # quay.io image layers (blob CDNs)
+    "cdn01.quay.io"
+    "cdn02.quay.io"
+    "cdn03.quay.io"
     "docker.io"
 )
 

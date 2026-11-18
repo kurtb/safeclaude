@@ -114,8 +114,18 @@ You are `dev`, not root (Claude's skip-permissions mode and minikube's docker
 driver both refuse root), with `docker` access and passwordless `sudo`. Anything
 the project needs beyond git/`gh`/Docker/Claude Code is the repo's own bootstrap
 step. If a download fails with "Could not resolve host", that host isn't on the
-allowlist: add it to `vm/allowlist.conf` on the host, re-run
-`sudo ./vm/install-host.sh`, then `devvm` again.
+allowlist. Add it **on the host** (not in the VM):
+
+```bash
+devvm allow nodejs.org static.rust-lang.org   # add + apply live, no VM restart
+devvm allow                                   # list your extras
+devvm allow --rm nodejs.org                   # take one back out
+devvm allow --refresh                         # re-resolve only (see below)
+```
+
+If a host that *is* allowed fails with "Couldn't connect to server", its IP has
+rotated away from the pinned snapshot: `devvm allow --refresh` re-resolves the
+whole list. Details in [README.md](README.md#adding-hosts).
 
 Edit the clone in-guest (`devvm shell`), or move files with `incus file`. VS Code
 Remote-SSH is a planned follow-up — the cloud image ships no SSH server or host

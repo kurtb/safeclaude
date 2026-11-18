@@ -35,15 +35,32 @@ for f in "$HERE" "$CONF" "$SQUIDCONF" "$RESOLVE"; do
     || { echo "refusing: $f must be root-owned and not group/world-writable" >&2; exit 1; }
 done
 
+# Effective allowlist = the installed base list + this host's own extras
+# (`devvm allow`). The extras file lives outside the install dir so re-running
+# install-host.sh doesn't wipe it, and gets the same anti-tamper check: it is
+# written only by root on the host, never by anything in a guest.
+LOCAL="/etc/devvm/allowlist.local"
+eff="$(mktemp)"; rtmp="$(mktemp)"; trap 'rm -f "$eff" "$rtmp"' EXIT
+cat "$CONF" > "$eff"
+if [ -e "$LOCAL" ]; then
+  # The directory too: a writable parent would let the file be swapped.
+  for f in "$(dirname "$LOCAL")" "$LOCAL"; do
+    o="$(stat -c '%U' "$f")"; p="$(stat -c '%a' "$f")"
+    { [ "$o" = root ] && [ $((8#$p & 8#022)) -eq 0 ]; } \
+      || { echo "refusing: $f must be root-owned and not group/world-writable" >&2; exit 1; }
+  done
+  { echo; cat "$LOCAL"; } >> "$eff"
+fi
+CONF="$eff"
+
 domains="$(grep -vE '^\s*#|^\s*$' "$CONF" | sed 's/^cidr://' | sort -u)"
 
 # Resolve to a temp file so a resolver failure is NOT swallowed by a pipe/|| true
 # (review: a silent empty set bricks the VM with no diagnostic). Fail loud and
 # keep the existing rules rather than applying an empty (deny-all) set.
-rtmp="$(mktemp)"; trap 'rm -f "$rtmp"' EXIT
 # Pass CONF explicitly: the resolver's own default ($HERE/../allowlist.conf) is
 # wrong in the installed layout (/usr/local/lib/allowlist.conf doesn't exist),
-# right only in the checkout. CONF here is the installed root-owned copy.
+# right only in the checkout. CONF here is the effective list built above.
 "$RESOLVE" "$CONF" > "$rtmp" || { echo "FATAL: allowlist resolver failed; keeping existing egress rules" >&2; exit 1; }
 mapfile -t allowed4 < <(grep -v ':' "$rtmp" || true)
 elems="$(printf '%s\n' "${allowed4[@]:-}" | sed '/^$/d' | paste -sd, -)"

@@ -12,6 +12,9 @@
 #
 #   source ~/.../vm/devvm.sh   # safe to source: no top-level `set -e`
 #   devvm [up|shell|stop|rm] [--name X]
+#   devvm allow [host ...]     # add hosts to this machine's egress allowlist
+#   devvm allow --rm host ...  # remove them again
+#   devvm allow --refresh      # just re-resolve (fixes stale pinned IPs)
 #
 # NOTE: no `set -euo pipefail` at file scope — that would kill an interactive
 # shell when sourced. It's scoped to the run subshell inside devvm() instead.
@@ -69,8 +72,104 @@ _devvm_driver() {
   esac
 }
 
+# `devvm allow` — this host's own additions to the egress allowlist.
+#
+# Extras live in a root-owned file on the HOST (outside the checkout and the
+# install dir), merged with vm/allowlist.conf by host-egress.sh and the driver.
+# Global to the machine: every devvm VM shares one bridge and one list. Run it
+# on the host — nothing inside a guest can reach this file, by design.
+_DEVVM_LOCAL_ALLOW="/etc/devvm/allowlist.local"
+
+_devvm_allow() {
+  local drv mode=add h bare esc hosts=() file="$_DEVVM_LOCAL_ALLOW"
+  # The INSTALLED base list is what is actually enforced; the checkout's copy
+  # may be newer (pulled, not yet re-installed), so never judge "already
+  # allowed" from the checkout.
+  local base="${DEVVM_INSTALL_DIR:-/usr/local/lib/devvm}/allowlist.conf"
+  drv="$(_devvm_driver)" || return 1
+  case "${1:-}" in
+    --rm)      mode=rm; shift ;;
+    --refresh) mode=refresh; shift ;;
+    -h|--help) echo "usage: devvm allow [host ...] | --rm host ... | --refresh"; return 0 ;;
+    -*)        echo "devvm allow: unknown option: $1" >&2; return 1 ;;
+  esac
+
+  if [ "$mode" = refresh ]; then
+    [ $# -eq 0 ] || { echo "devvm allow --refresh takes no hosts (it changes nothing, only re-resolves)" >&2; return 1; }
+    "$drv" refresh _ "" "$_DEVVM_HERE"
+    return
+  fi
+
+  if [ "$mode" = add ] && [ $# -eq 0 ]; then
+    echo "extra egress allowlist ($file):"
+    if [ -s "$file" ]; then sed 's/^/  /' "$file"; else echo "  (none)"; fi
+    echo "base list: $base"
+    return 0
+  fi
+  [ $# -gt 0 ] || { echo "devvm allow --rm: name at least one host" >&2; return 1; }
+  [ -r "$base" ] || { echo "devvm allow: no installed allowlist at $base — run: sudo \"$_DEVVM_HERE/install-host.sh\"" >&2; return 1; }
+
+  # Exact host names only: every layer (DNS, SNI proxy, IP pin) works per name,
+  # so a wildcard can't be expressed. Accept a pasted URL by trimming it down.
+  # SECURITY: this regex is the only thing between user input and a root-owned
+  # config file (and the sed pattern in --rm below). Keep it strict — letters,
+  # digits, '-' and '.' only.
+  for h in "$@"; do
+    h="$(printf '%s' "$h" | tr '[:upper:]' '[:lower:]')"
+    h="${h#http://}"; h="${h#https://}"; h="${h%%/*}"; h="${h%.}"
+    bare="${h#cidr:}"
+    if ! [[ "$bare" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$ ]]; then
+      echo "devvm allow: not a host name: '$h' (exact names only — no wildcards, IPs or ports)" >&2
+      return 1
+    fi
+    hosts+=("$h")
+  done
+
+  for h in "${hosts[@]}"; do
+    bare="${h#cidr:}"; esc="${bare//./\\.}"
+    if [ "$mode" = add ]; then
+      # A plain request is satisfied by either form; a cidr: request only by an
+      # existing cidr: entry, so it can widen a host that is already listed.
+      if [ "$h" = "$bare" ]; then
+        if grep -qxF -e "$bare" -e "cidr:$bare" "$file" "$base" 2>/dev/null; then
+          echo "already allowed: $bare"; continue
+        fi
+      else
+        if grep -qxF -e "cidr:$bare" "$file" "$base" 2>/dev/null; then
+          echo "already allowed: $h"; continue
+        fi
+        echo "note: cidr: pins the whole /24 around each address $bare resolves to — a wider grant than one host" >&2
+      fi
+      sudo install -d -o root -g root -m 0755 "$(dirname "$file")"
+      # Widening an existing plain extra replaces it rather than listing both.
+      if [ "$h" != "$bare" ] && [ -e "$file" ]; then sudo sed -i -e "/^${esc}\$/d" "$file"; fi
+      printf '%s\n' "$h" | sudo tee -a "$file" >/dev/null
+      sudo chown root:root "$file"; sudo chmod 0644 "$file"
+      echo "added: $h"
+    else
+      if grep -qxF -e "$bare" -e "cidr:$bare" "$file" 2>/dev/null; then
+        sudo sed -i -e "/^${esc}\$/d" -e "/^cidr:${esc}\$/d" "$file"
+        echo "removed: $bare"
+      elif grep -qxF -e "$bare" -e "cidr:$bare" "$base" 2>/dev/null; then
+        echo "$bare is on the base list (vm/allowlist.conf), not an extra — edit that file and re-run install-host.sh" >&2
+      else
+        echo "not in the extras: $bare"
+      fi
+    fi
+  done
+
+  # Always re-apply, even when the file didn't change: if an earlier apply
+  # failed, the file and the live rules disagree, and a retry must fix that.
+  "$drv" refresh _ "" "$_DEVVM_HERE" || {
+    echo "devvm allow: the list was saved but was NOT fully applied — DNS, proxy and IP pin may" >&2
+    echo "  now disagree (it still fails closed). Fix the error above, then run: devvm allow --refresh" >&2
+    return 1
+  }
+}
+
 devvm() {
   local verb name drv repo
+  if [ "${1:-}" = allow ]; then shift; ( set -euo pipefail; _devvm_allow "$@" ); return; fi
   verb="$(_devvm_verb "$@")"
   name="$(_devvm_name "$@")"
   drv="$(_devvm_driver)" || return 1
