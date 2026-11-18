@@ -91,7 +91,7 @@ _devvm_driver() {
 #
 # Extras live in a root-owned file on the HOST (outside the checkout and the
 # install dir), merged with vm/allowlist.conf by host-egress.sh and the driver.
-# Global to the machine: every devvm VM shares one bridge and one list. Run it
+# Global to the machine: every project bridge uses the same list. Run it
 # on the host — nothing inside a guest can reach this file, by design.
 _DEVVM_LOCAL_ALLOW="/etc/devvm/allowlist.local"
 

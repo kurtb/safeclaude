@@ -193,6 +193,10 @@ For one file, use `devvm cp push HOST_FILE /absolute/guest/path` or `devvm cp pu
 
 Inside the guest as `dev`, run `bash ~/workspace/safeclaude/vm/guest-cloud-tools.sh` from a SafeClaude clone, then `minikube start --driver=docker`. The installer supplies gcloud, Pulumi, kubectl, Helm and minikube. If a registry pull fails, inspect the Location header with `curl -sSI https://registry.k8s.io/v2/pause/manifests/3.10`. Run `devvm allow HOSTNAME` on the host for the exact regional redirect destination if the project needs it.
 
+## Personal tools and logins
+
+Guest setup installs `gh-auth-setup`. Run it as `dev` inside the guest for a VM-scoped GitHub login. Dotfiles and gstack are optional. See the [personal setup guide](PERSONAL.md) for installation groups, Chromium requirements and the decision on Tailscale.
+
 ## Teardown
 
 ```bash
