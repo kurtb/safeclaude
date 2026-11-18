@@ -37,6 +37,7 @@ cp -L /etc/{passwd,group,resolv.conf} "$scratch"
 awk_bin=$(readlink -f "$(command -v awk)")
 nft_bin=$(command -v nft)
 for path in /usr/local/lib /etc /run; do mount -t tmpfs tmpfs "$path"; done
+"$vm/test/release-install-test.sh"
 cp "$scratch"/{passwd,group,resolv.conf} /etc
 mkdir -p /etc/systemd/system /usr/local/lib/devvm "$scratch/bin"
 install -m 0755 "$vm"/lib/host-{egress,firewall}.sh /usr/local/lib/devvm/
