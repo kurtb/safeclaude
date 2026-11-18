@@ -25,7 +25,7 @@ export PATH="$fixture/bin:$PATH"
 base=https://github.com/kurtb/safeclaude/releases
 for version in v1.0.0 v1.1.0; do
   mkdir "$version"
-  printf '#!/bin/sh\necho %s >> "$fixture/installed"\n' "$version" >devvm/install-host.sh
+  printf '#!/bin/sh\necho %s >> "%s/installed"\n' "$version" "$fixture" >devvm/install-host.sh
   chmod +x devvm/install-host.sh
   tar -czf "$version/devvm.tar.gz" devvm
   (cd "$version" && sha256sum devvm.tar.gz >devvm.tar.gz.sha256)
