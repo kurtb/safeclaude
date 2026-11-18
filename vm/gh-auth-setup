@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Guest port of gh-auth-setup.sh. Manual only: type a VM-scoped PAT in the
+# guest (hidden prompt), or provide it on guest stdin or in the guest env.
+set +x
+set -euo pipefail
+umask 077
+(( EUID != 0 )) || { echo "run gh-auth-setup as dev inside the VM, not root" >&2; exit 1; }
+command -v gh >/dev/null || { echo "gh is missing; run guest-setup.sh first" >&2; exit 1; }
+
+# gh auth token also sees environment tokens. Check only stored state so a
+# one-shell GH_TOKEN doesn't look like a persistent login.
+env_token=${GH_TOKEN:-${GITHUB_TOKEN:-}}
+unset GH_TOKEN GITHUB_TOKEN GH_DEBUG
+if ! gh auth token --hostname github.com >/dev/null 2>&1; then
+  token=
+  if [[ ! -t 0 ]]; then token=$(cat); fi
+  token=${token:-$env_token}
+  if [[ -z $token && -t 0 ]]; then
+    IFS= read -rsp 'Paste a GitHub PAT for this VM (Enter to skip): ' token || :
+    printf '\n' >&2
+  fi
+  token=${token//[[:space:]]/}
+  if [[ -z $token ]]; then
+    echo "Skipped GitHub login." >&2
+    exit 0
+  fi
+  printf '%s' "$token" | gh auth login --hostname github.com --git-protocol https --with-token
+fi
+unset token env_token
+# Retry this even if a previous login succeeded but setup-git failed.
+gh auth setup-git --hostname github.com
+echo "GitHub credentials configured for HTTPS Git in this guest." >&2

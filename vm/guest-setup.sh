@@ -22,6 +22,15 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y ca-certificates curl git jq gh
 
+step "Guest-local GitHub login helper (not a login)"
+# A host upgrade may stream this script on stdin after installing the helper.
+if [[ -n ${BASH_SOURCE[0]:-} ]]; then
+  install -m 0755 "$(dirname -- "${BASH_SOURCE[0]}")/gh-auth-setup" /usr/local/bin/gh-auth-setup
+elif [[ ! -x /usr/local/bin/gh-auth-setup ]]; then
+  echo "Install the accompanying gh-auth-setup at /usr/local/bin/gh-auth-setup before streaming guest-setup.sh." >&2
+  exit 1
+fi
+
 step "Docker"
 if command -v docker >/dev/null 2>&1; then
   echo "already installed: $(docker --version)"
@@ -72,4 +81,4 @@ fi
 step "Done"
 echo "docker: $(docker --version)"
 echo "claude: $(su - dev -s /bin/bash -c 'claude --version')"
-echo "Next: exit, re-enter with 'devvm shell' (now logs in as dev), then:  gh auth login --with-token && gh auth setup-git ; claude login"
+echo "Next: exit, re-enter with 'devvm shell' (now logs in as dev), then: gh-auth-setup; claude login"
