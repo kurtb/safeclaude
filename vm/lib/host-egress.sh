@@ -30,7 +30,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NET="${DEVVM_NET:-devvmbr0}"
 SUBNET="${DEVVM_SUBNET:-10.63.0.0/24}"     # must match the Incus network ipv4.address
 PROXY_IP="${DEVVM_PROXY_IP:-10.63.0.1}"
-PORT_HTTP=3129; PORT_HTTPS=3130
 ETC=/etc/devvm
 
 # Config lives alongside this script in the root-owned install dir. No checkout
@@ -161,40 +160,7 @@ install -o root -g root -m 0644 "$tmp/haproxy.cfg" "$ETC/haproxy.cfg"
 #    untouched; only the VM subnet/interface is clamped. Applied BEFORE the
 #    proxy is (re)started: with the rules in place and no proxy listening, the
 #    guest gets "connection refused" — closed, never open.
-nft -f - <<NFT
-add table inet devvm
-delete table inet devvm
-table inet devvm {
-  chain prerouting {
-    type nat hook prerouting priority dstnat;
-    # Every guest web connection goes to the proxy, whatever address it aimed
-    # at. The proxy decides by NAME and picks the address itself.
-    ip saddr $SUBNET tcp dport 80  dnat ip to $PROXY_IP:$PORT_HTTP
-    ip saddr $SUBNET tcp dport 443 dnat ip to $PROXY_IP:$PORT_HTTPS
-  }
-  chain input {
-    type filter hook input priority filter; policy accept;
-    iifname != "$NET" accept
-    ct state established,related accept
-    # DNS + proxy are pinned to the bridge IP: the input hook sees traffic to ANY
-    # host-local address, so an unpinned accept would also let the guest query a
-    # resolver bound to another host address (e.g. the default incusbr0 dnsmasq,
-    # which forwards every name — an unrestricted DNS path around gate 4). DNATed
-    # proxy traffic already carries daddr $PROXY_IP by the time it reaches input.
-    # DHCP stays unpinned (DISCOVER/REQUEST are broadcast).
-    iifname "$NET" udp dport 67 accept
-    iifname "$NET" ip daddr $PROXY_IP udp dport 53 accept
-    iifname "$NET" ip daddr $PROXY_IP tcp dport { 53, $PORT_HTTP, $PORT_HTTPS } accept
-    iifname "$NET" drop
-  }
-  chain forward {
-    type filter hook forward priority filter; policy accept;
-    ct state established,related accept
-    oifname "$NET" ct state new drop          # no new inbound to guests (LAN/other ifaces)
-    iifname "$NET" counter reject             # no direct guest egress at all
-  }
-}
-NFT
+"$HERE/host-firewall.sh"
 
 # 4) Bring the dedicated proxy up to date (see proxy_action above).
 systemctl daemon-reload

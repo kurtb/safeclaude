@@ -19,7 +19,7 @@ cat /sys/module/kvm_intel/parameters/nested 2>/dev/null \
 
 # 0b. Install Incus + the egress tooling (HAProxy 2.8 or newer; Ubuntu 24.04 ships it).
 sudo apt update
-sudo apt install -y incus haproxy dnsmasq-base nftables curl git
+sudo apt install -y incus haproxy dnsmasq-base nftables jq curl git
 sudo incus admin init --minimal                 # accept the minimal defaults
 
 # 0c. Let your user drive Incus without sudo.
@@ -52,10 +52,7 @@ cd ~/path/to/your-project      # a git repo; a public https origin is cloned ins
 devvm                          # create network+VM (first run), apply egress, boot, shell in (bare VM, root)
 ```
 
-What happens, in order: create `devvmbr0` (Incus firewall off, NAT off, DNS
-off — we own all three) → `incus init` the VM stopped → `sudo` the host egress
-(by-name proxy + allowlist DNS + default-deny) → start → root shell in
-a **bare** VM. Nothing is installed at boot.
+The driver creates a dedicated bridge and subnet for the project, configures its DNS allowlist, and initializes the VM stopped. It applies the host firewall and proxy before starting the VM. A fresh VM opens a root shell.
 
 Set the VM up by hand, in that root shell:
 

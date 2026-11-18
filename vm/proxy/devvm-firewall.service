@@ -1,0 +1,12 @@
+[Unit]
+Description=Restore the devvm guest firewall before Incus starts
+After=nftables.service
+Before=incus.service devvm-proxy.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/devvm/host-firewall.sh --restore
+RemainAfterExit=yes
+
+[Install]
+RequiredBy=incus.service devvm-proxy.service

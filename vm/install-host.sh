@@ -18,6 +18,7 @@ read -r hmaj hmin <<<"${hv:-0 0}"
 
 install -d -o root -g root -m 0755 "$DEST"
 # Flatten the files host-egress.sh needs into one root-owned dir.
+install -o root -g root -m 0755 "$SRC/lib/host-firewall.sh" "$DEST/host-firewall.sh"
 install -o root -g root -m 0755 "$SRC/lib/host-egress.sh"   "$DEST/host-egress.sh"
 install -o root -g root -m 0644 "$SRC/allowlist.conf"       "$DEST/allowlist.conf"
 install -o root -g root -m 0644 "$SRC/proxy/haproxy.cfg"    "$DEST/haproxy.cfg"
@@ -40,6 +41,12 @@ fi
 unit=/etc/systemd/system/devvm-proxy.service
 unit_changed=1; cmp -s "$SRC/proxy/devvm-proxy.service" "$unit" && unit_changed=0
 install -o root -g root -m 0644 "$SRC/proxy/devvm-proxy.service" "$unit"
+# The test rig builds a temporary network and never owns Incus boot ordering.
+if [ ! -e "$DEST/.egress-rig" ]; then
+  install -o root -g root -m 0644 "$SRC/proxy/devvm-firewall.service" /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl enable --now devvm-firewall.service
+fi
 systemctl daemon-reload
 # A running proxy keeps its old unit settings until restarted.
 if [ "$unit_changed" = 1 ]; then systemctl try-restart devvm-proxy.service || true; fi

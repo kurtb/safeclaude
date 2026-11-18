@@ -4,6 +4,7 @@
 Description=devvm egress proxy (HAProxy, allowlist by name)
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=notify
@@ -22,10 +23,7 @@ ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-# The bridge IP it binds may not exist yet at boot; keep trying. After a
-# reboot it can be up before host-egress.sh has re-applied the nftables rules;
-# that is harmless (it enforces the same allowlist whoever reaches it), and
-# guests are not auto-started on boot.
+# Incus recreates the proxy bridge at startup. Retry until its IP exists.
 Restart=on-failure
 RestartSec=5
 

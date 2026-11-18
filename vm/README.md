@@ -114,11 +114,6 @@ claimed solved:
   allowlisted zone, so a slow DNS tunnel under such a zone is possible.
 - **General-purpose allowlisted hosts** (`github.com`, `sentry.io`,
   `statsig.com`, gists/raw) are usable as exfil channels by a hostile agent.
-- **Cross-project network isolation.** All project VMs currently share one
-  bridge (`devvmbr0`) with Incus firewalling off; the nft `forward` chain filters
-  routed egress but not intra-bridge L2, so VMs on the bridge can reach each
-  other's services. Fix in progress: a per-project bridge (VEC-230). Until then,
-  treat concurrently-running project VMs as mutually reachable.
 - **Credentials you put in the guest** (a `gh` token, the Claude login) are
   readable by the agent running there — it is `dev` with `sudo`. Give each VM a
   fine-grained token scoped to its repos and to the least it needs (read-only
@@ -149,9 +144,9 @@ checks 25 things a guest must or must not be able to do, including:
 - SSH, other ports, host services and outside DNS are unreachable;
 - with the proxy stopped, nothing gets out.
 
-**Not yet validated on a real Incus host.** The rig replaces only Incus's
-plumbing (the bridge and `raw.dnsmasq`), which this change does not touch, but
-run Phase 3 of the [QUICKSTART](QUICKSTART.md) after upgrading.
+**Project isolation.** Each VM has a dedicated `dvmp-<hash>` bridge with a subnet allocated by Incus. The shared `devvmbr0` address hosts the proxy. The host drops inter-bridge forwarding and port-to-port traffic on legacy bridges. Stop a legacy VM once and run `devvm up` to move its NIC. Its files and snapshots stay on disk. Removing a project also removes its bridge.
+
+Run `vm/test/project-isolation.sh VM_A VM_B` against two running project VMs after upgrading your host. It checks HTTPS from each VM, starts a temporary TCP service in each, and verifies that the host can reach both services while the other project cannot. The [quickstart](QUICKSTART.md) covers DNS and proxy checks.
 
 ### Host setup (prerequisites)
 
@@ -161,8 +156,8 @@ run Phase 3 of the [QUICKSTART](QUICKSTART.md) after upgrading.
    Squid is no longer used.
 1. `sudo ./install-host.sh` — installs the egress enforcement root-owned to
    `/usr/local/lib/devvm` (the driver runs that copy, never the checkout) and
-   the `devvm-proxy.service` unit. For reboot persistence, add a systemd unit
-   running the egress script before `incus.service` (VEC-243).
+   the dedicated proxy and firewall units. Incus requires `devvm-firewall.service`
+   to restore the last applied rules before the daemon starts.
 2. Ensure your shell is in the `incus-admin` group (`newgrp incus-admin` or
    re-login) so `devvm` can talk to the Incus socket.
 
