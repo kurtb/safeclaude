@@ -111,9 +111,26 @@ claude --dangerously-skip-permissions  # fine here: egress is capped on the host
 ```
 
 You are `dev`, not root (Claude's skip-permissions mode and minikube's docker
-driver both refuse root), with `docker` access and passwordless `sudo`. Anything
-the project needs beyond git/`gh`/Docker/Claude Code is the repo's own bootstrap
-step. If a download fails with "Could not resolve host", that host isn't on the
+driver both refuse root), with `docker` access and passwordless `sudo`.
+
+`guest-setup.sh` installs only git/`gh`/Docker/Claude Code. For the everyday
+toolbox the container image used to bake in, run the optional second script as
+`dev` (idempotent; re-run any time):
+
+```bash
+bash ~/workspace/safeclaude/vm/guest-tools.sh          # everything, ~1 min
+bash ~/workspace/safeclaude/vm/guest-tools.sh agents   # or one group
+```
+
+| Group | Installs |
+| --- | --- |
+| `base` | zsh, fzf, ripgrep, jq, tmux, tree, htop, build-essential, Python venv/pip, shellcheck, hadolint, git-delta, Neovim |
+| `node` | Node.js (via fnm) and Bun |
+| `agents` | Codex, Gemini and Cursor CLIs, plus the `yolo-claude` / `yolo-codex` / `yolo-gemini` / `yolo-cursor` aliases |
+| `git` | delta as the pager; `user.name` / `user.email` if you pass `GIT_USER_NAME` / `GIT_USER_EMAIL` |
+
+Open a new shell afterwards to pick up `PATH` and the aliases. Anything beyond
+that is the repo's own bootstrap step. If a download fails with "Could not resolve host", that host isn't on the
 allowlist. Add it **on the host** (not in the VM):
 
 ```bash
