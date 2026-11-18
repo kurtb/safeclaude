@@ -6,7 +6,7 @@
 
 The Docker container lane (`Dockerfile`, `init-firewall.sh`, `entrypoint.sh`, `safeclaude.zsh`, `install.sh` and the image workflows) is being retired in favour of the VM lane in `vm/`.
 
-- Container changes are limited to allowlist fixes and tool-version bumps. Do not add container features or new container mechanisms.
+- Container changes are limited to allowlist fixes and tool-version bumps. Do not add container features or new container mechanisms. An allowlist fix is still an egress change, so it is still a **minor** bump under the rules below.
 - New capabilities go into `vm/`. If the container has something the VM lacks, port it to the VM rather than improving the container copy.
 
 ## Versioning & releases

@@ -6,8 +6,8 @@ Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) i
 > fixes only — no new features — and will be removed once the VM lane below
 > covers everything it does. New work goes into [`vm/`](vm/README.md).
 >
-> **VM lane (`vm/`) — where this project is heading.** `devvm` boots a
-> per-project VM (Incus on Linux) with a host-enforced, default-deny egress
+> **VM lane (`vm/`) — where this project is heading. Linux/Incus only today.**
+> `devvm` boots a per-project VM with a host-enforced, default-deny egress
 > allowlist of its own ([`vm/allowlist.conf`](vm/allowlist.conf), separate from
 > the container's list below). It has a separate kernel, runs Docker/minikube
 > natively, and keeps enforcement where the guest can't reach it. You work in
