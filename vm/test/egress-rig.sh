@@ -29,6 +29,7 @@ export DEVVM_SUBNET="${RIG_SUBNET:-10.99.0.0/24}"
 export DEVVM_PROXY_IP="${RIG_PROXY_IP:-10.99.0.1}"
 GUEST_IP="${RIG_GUEST_IP:-10.99.0.2}"
 RIG_V6="${RIG_V6:-fd00:99::1}"
+RIG_HOSTPUB="${RIG_HOSTPUB:-192.0.9.1}"
 NS=devvmrig
 RUN=/run/devvm-rig
 MARK=/usr/local/lib/devvm/.egress-rig     # "this install belongs to the rig"
@@ -57,7 +58,7 @@ down() {
   ip netns del "$NS" 2>/dev/null || true
   ip link del "$DEVVM_NET" 2>/dev/null || true
   nft delete table inet devvm 2>/dev/null || true
-  rm -f /etc/systemd/system/devvm-proxy.service /etc/devvm/haproxy.cfg /etc/devvm/allowed-domains
+  rm -f /etc/systemd/system/devvm-proxy.service /etc/devvm/haproxy.cfg /etc/devvm/allowed-domains /etc/devvm/bogons
   rm -rf "$RUN" "/etc/netns/$NS" /usr/local/lib/devvm /run/devvm-proxy-applied
   rmdir /etc/devvm 2>/dev/null || true      # kept if it holds allowlist.local
   systemctl daemon-reload
@@ -79,6 +80,9 @@ up() {
     # A private IPv6 address on the host, for the "name with only an IPv6
     # answer" test (see ssrf-v6.test below).
     ip -6 addr add "$RIG_V6/64" dev "$DEVVM_NET" nodad
+    # A PUBLIC-range address held by the host, for the "name resolving to the
+    # host's own public address" test. Local to this bridge; never routed.
+    ip addr add "$RIG_HOSTPUB/32" dev "$DEVVM_NET"
   fi
   if ! ip netns list | grep -qw "$NS"; then
     ip netns add "$NS"
@@ -101,7 +105,7 @@ up() {
     echo "no-resolv"
     { cat /usr/local/lib/devvm/allowlist.conf; echo
       if [ -r /etc/devvm/allowlist.local ]; then cat /etc/devvm/allowlist.local; fi; } \
-      | grep -vE '^[[:space:]]*#|^[[:space:]]*$' | sed 's/^cidr://' | sort -u \
+      | grep -vE '^[[:space:]]*#|^[[:space:]]*$' | sed 's/^cidr://' | LC_ALL=C sort -u \
       | while IFS= read -r d; do echo "server=/$d/$UPSTREAM"; done
   } > "$RUN/dnsmasq.conf"
   dnsmasq --conf-file="$RUN/dnsmasq.conf" --pid-file="$RUN/dnsmasq.pid" \
@@ -109,7 +113,7 @@ up() {
     --listen-address="$DEVVM_PROXY_IP" --no-hosts --no-dhcp-interface="$DEVVM_NET"
 
   # The proxy's resolver: a second dnsmasq that forwards everything upstream
-  # but answers four test names with addresses the proxy must REFUSE to
+  # but answers five test names with addresses the proxy must REFUSE to
   # connect to. They are put on the allowlist (below) so that the only thing
   # standing between the guest and those addresses is the proxy's bogon check.
   if [ -f "$RUN/proxydns.pid" ]; then kill "$(cat "$RUN/proxydns.pid")" 2>/dev/null || true; fi
@@ -118,11 +122,12 @@ up() {
     --address=/ssrf-loopback.test/127.0.0.1 \
     --address=/ssrf-bridge.test/"$DEVVM_PROXY_IP" \
     --address=/ssrf-metadata.test/169.254.169.254 \
-    --address=/ssrf-v6.test/"$RIG_V6"
+    --address=/ssrf-v6.test/"$RIG_V6" \
+    --address=/ssrf-hostpub.test/"$RIG_HOSTPUB"
   install -d -o root -g root -m 0755 /etc/devvm
   if [ ! -e /etc/devvm/allowlist.local ]; then touch "$RUN/made-local"; fi
   if [ -e "$RUN/made-local" ]; then
-    printf '%s\n' ssrf-loopback.test ssrf-bridge.test ssrf-metadata.test ssrf-v6.test > /etc/devvm/allowlist.local
+    printf '%s\n' ssrf-loopback.test ssrf-bridge.test ssrf-metadata.test ssrf-v6.test ssrf-hostpub.test > /etc/devvm/allowlist.local
     chmod 0644 /etc/devvm/allowlist.local
   fi
 

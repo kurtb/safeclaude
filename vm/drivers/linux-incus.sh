@@ -27,6 +27,15 @@ need() { command -v incus >/dev/null || { echo "incus not installed" >&2; exit 1
 # per allowlisted host means only allowlisted zones resolve — everything else
 # gets no upstream => NXDOMAIN. Sourced from the installed root-owned allowlist
 # so DNS shares one list with the proxy. Fails loud if absent.
+# Same normalisation as lib/host-egress.sh, so DNS and the proxy can't end up
+# with different names for one line: drop comments/blanks, trim whitespace and
+# CRs, drop a legacy cidr: prefix, lower-case, de-duplicate.
+normalise_allowlist() {
+  { grep -vE '^[[:space:]]*#|^[[:space:]]*$' || true; } \
+    | sed -e 's/[[:space:]]*$//' -e 's/^[[:space:]]*//' -e 's/^cidr://' \
+    | tr '[:upper:]' '[:lower:]' | LC_ALL=C sort -u
+}
+
 build_raw_dnsmasq() {
   local c conf=""
   for c in /usr/local/lib/devvm/allowlist.conf "$VMDIR/allowlist.conf"; do
@@ -38,7 +47,7 @@ build_raw_dnsmasq() {
   local extra=/etc/devvm/allowlist.local
   echo "no-resolv"
   { cat "$conf"; echo; if [ -r "$extra" ]; then cat "$extra"; fi; } \
-    | grep -vE '^[[:space:]]*#|^[[:space:]]*$' | sed 's/^cidr://' | sort -u \
+    | normalise_allowlist \
     | while IFS= read -r d; do [ -n "$d" ] && echo "server=/$d/${DEVVM_DNS_UPSTREAM:-1.1.1.1}"; done
 }
 
@@ -69,7 +78,8 @@ create_if_absent() {
     -c limits.cpu=4 -c limits.memory=8GiB \
     --network "$NET"
   # Don't auto-start on host boot: nft rules aren't persisted, so an autostarted
-  # VM could come up before egress is applied. `devvm`
+  # VM could come up before egress is applied (the proxy unit relies on this
+  # too: it may be running before the rules exist after a reboot). `devvm`
   # re-applies egress on every ensure before starting.
   incus config set "$name" boot.autostart=false
   # Nested virt for minikube's kvm2 depends on HOST nested virt being on

@@ -15,6 +15,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RIG="$HERE/egress-rig.sh"
 PROXY_IP="${RIG_PROXY_IP:-10.99.0.1}"
 V6="${RIG_V6:-fd00:99::1}"
+HOSTPUB="${RIG_HOSTPUB:-192.0.9.1}"
 
 "$RIG" up >/dev/null || { echo "rig failed to come up" >&2; exit 1; }
 g() { "$RIG" run "$@"; }                     # run as the guest
@@ -73,8 +74,9 @@ echo "An allowlisted name cannot be used to reach private addresses (SSRF)"
 canary="$(mktemp -d)"; echo canary > "$canary/index.html"
 ( cd "$canary" && exec python3 -m http.server 80 --bind 127.0.0.1 >"$canary/log" 2>&1 ) & cpid=$!
 ( cd "$canary" && exec python3 -m http.server 80 --bind "$V6" >"$canary/log6" 2>&1 ) & cpid6=$!
+( cd "$canary" && exec python3 -m http.server 80 --bind "$HOSTPUB" >"$canary/logp" 2>&1 ) & cpidp=$!
 sleep 1
-if kill -0 "$cpid" 2>/dev/null && kill -0 "$cpid6" 2>/dev/null; then ok "canary web servers started on host loopback (IPv4 and a private IPv6)"
+if kill -0 "$cpid" 2>/dev/null && kill -0 "$cpid6" 2>/dev/null && kill -0 "$cpidp" 2>/dev/null; then ok "canary web servers started on the host (loopback, a private IPv6, a public-range address)"
 else bad "canary web servers started" "port 80 on host loopback is in use; the canary check below proves nothing"; fi
 expect "HTTP name resolving to loopback"                       403 --resolve ssrf-loopback.test:80:1.2.3.4 http://ssrf-loopback.test/
 expect "HTTP name resolving to the bridge IP"                  403 --resolve ssrf-bridge.test:80:1.2.3.4 http://ssrf-bridge.test/
@@ -83,8 +85,9 @@ expect "HTTPS name resolving to loopback"                      blocked --resolve
 expect "HTTPS name resolving to the metadata IP"               blocked --resolve ssrf-metadata.test:443:1.2.3.4 https://ssrf-metadata.test/
 expect "HTTP name with only a (private) IPv6 address"         403 --resolve ssrf-v6.test:80:1.2.3.4 http://ssrf-v6.test/
 expect "HTTPS name with only a (private) IPv6 address"        blocked --resolve ssrf-v6.test:443:1.2.3.4 https://ssrf-v6.test/
-kill "$cpid" "$cpid6" 2>/dev/null
-if grep -q '"GET' "$canary/log" "$canary/log6" 2>/dev/null; then bad "canary on host loopback was never contacted" "it received a request"; else ok "canary on host loopback was never contacted"; fi
+expect "HTTP name resolving to the host's own public address"  403 --resolve ssrf-hostpub.test:80:1.2.3.4 http://ssrf-hostpub.test/
+kill "$cpid" "$cpid6" "$cpidp" 2>/dev/null
+if grep -q '"GET' "$canary/log" "$canary/log6" "$canary/logp" 2>/dev/null; then bad "the canaries on the host were never contacted" "it received a request"; else ok "the canaries on the host were never contacted"; fi
 rm -rf "$canary"
 
 echo "Nothing but web traffic leaves, and the host is not reachable"

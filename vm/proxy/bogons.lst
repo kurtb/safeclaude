@@ -2,9 +2,9 @@
 # name: loopback, private, link-local (cloud metadata), CGNAT, documentation,
 # multicast and reserved space. One CIDR per line; read by haproxy.cfg.
 #
-# Not covered: the host's own PUBLIC addresses, and LAN addresses outside the
-# private ranges. Reaching those would take control of an allowlisted name's
-# DNS (see "The host's resolver is trusted" in README.md).
+# host-egress.sh appends the host's own addresses to this at apply time, so a
+# host with a public address is covered too. Not covered: OTHER machines on a
+# LAN that uses non-private address space.
 #
 # IPv4 only. The proxy separately refuses every non-IPv4 answer, so there is no
 # IPv6 list to keep in step.

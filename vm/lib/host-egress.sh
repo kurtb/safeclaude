@@ -87,7 +87,17 @@ bad="$(grep -vE '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-
 # 1) Proxy config. Validate the new config BEFORE installing it, so a bad edit
 #    leaves the running proxy and its rules untouched.
 sed -e "s/@PROXY_IP@/$PROXY_IP/g" -e "s#@DOMAINS@#$ETC/allowed-domains#g" \
-    -e "s#@BOGONS@#$BOGONS#g" "$PROXYCONF" > "$tmp/haproxy.cfg"
+    -e "s#@BOGONS@#$ETC/bogons#g" "$PROXYCONF" > "$tmp/haproxy.cfg"
+# Addresses the proxy must never connect to: the fixed list, plus every IPv4
+# address this host itself holds right now. Without the second part, a name
+# resolving to the host's own PUBLIC address would reach host services that
+# listen there (the input chain only guards traffic arriving on the bridge).
+# It is a snapshot: a host that changes address is covered again on the next
+# apply (`devvm up` / `devvm allow`).
+{ cat "$BOGONS"
+  echo "# this host's own addresses, at apply time"
+  ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1 | sed 's|$|/32|' | LC_ALL=C sort -u
+} > "$tmp/bogons"
 # By default the proxy resolves through the host's /etc/resolv.conf. Set
 # DEVVM_PROXY_DNS=ip:port to pin it to one resolver instead (the test rig does,
 # to feed it names that resolve to private addresses).
@@ -99,7 +109,8 @@ if [ -n "${DEVVM_PROXY_DNS:-}" ]; then
   sed -i "s/^  parse-resolv-conf\$/  nameserver pinned $DEVVM_PROXY_DNS/" "$tmp/haproxy.cfg"
 fi
 install -o root -g root -m 0644 "$tmp/domains" "$ETC/allowed-domains.new"
-sed "s#$ETC/allowed-domains#$ETC/allowed-domains.new#g" "$tmp/haproxy.cfg" > "$tmp/check.cfg"
+sed -e "s#$ETC/allowed-domains#$ETC/allowed-domains.new#g" -e "s#$ETC/bogons#$tmp/bogons#g" \
+  "$tmp/haproxy.cfg" > "$tmp/check.cfg"
 haproxy -c -q -f "$tmp/check.cfg" \
   || { rm -f "$ETC/allowed-domains.new"; echo "FATAL: generated proxy config is invalid; keeping the existing one" >&2; exit 1; }
 # What changed decides how the proxy is brought up to date (step 4):
@@ -126,6 +137,15 @@ elif ! cmp -s "$tmp/domains" "$APPLIED/allowed-domains" 2>/dev/null; then
     proxy_action=reload
   fi
 fi
+# A changed refuse list only needs loading; nothing is being revoked.
+if [ "$proxy_action" = none ] && ! cmp -s "$tmp/bogons" "$APPLIED/bogons" 2>/dev/null; then
+  proxy_action=reload
+fi
+# The files are published here, before the firewall step. That is safe: a
+# proxy that picks them up early (a systemd auto-restart) only gets stricter
+# or equal rules for names, and $APPLIED, not these files, records what the
+# running proxy has loaded.
+install -o root -g root -m 0644 "$tmp/bogons" "$ETC/bogons"
 mv "$ETC/allowed-domains.new" "$ETC/allowed-domains"
 install -o root -g root -m 0644 "$tmp/haproxy.cfg" "$ETC/haproxy.cfg"
 
@@ -190,6 +210,7 @@ if [ "$proxy_action" != none ]; then
   install -d -o root -g root -m 0755 "$APPLIED"
   install -o root -g root -m 0644 "$tmp/haproxy.cfg" "$APPLIED/haproxy.cfg"
   install -o root -g root -m 0644 "$tmp/domains" "$APPLIED/allowed-domains"
+  install -o root -g root -m 0644 "$tmp/bogons" "$APPLIED/bogons"
 fi
 
 echo "devvm host egress on $NET ($SUBNET): by-name proxy ($(wc -l < "$ETC/allowed-domains") hosts) + allowlist DNS + default-deny"
