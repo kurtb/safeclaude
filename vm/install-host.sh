@@ -42,6 +42,7 @@ install -d -o root -g root -m 0755 "$DEST/drivers" "$DEST/lib"
 install -o root -g root -m 0755 "$SRC"/{devvm,guest-setup,guest-tools,guest-cloud-tools,guest-personal}.sh "$SRC/gh-auth-setup" "$DEST/"
 install -o root -g root -m 0755 "$SRC"/drivers/{linux-incus,incus-editor,darwin-lima,windows-wsl2}.sh "$DEST/drivers/"
 install -o root -g root -m 0755 "$SRC"/lib/{doctor,guest-doctor,guest-editor-setup}.sh "$DEST/lib/"
+install -o root -g root -m 0644 "$SRC/lib/host-vscode-settings.py" "$DEST/lib/"
 [[ -d /usr/local/bin ]] || install -d -o root -g root -m 0755 /usr/local/bin
 install -T -o root -g root -m 0755 "$SRC/host/devvm" "$CLI"
 echo "Installed $CLI; from a project directory, run: devvm"

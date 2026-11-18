@@ -76,6 +76,22 @@ check_proxy_config() {
     cmp -s /etc/devvm/haproxy.cfg -
 }
 
+# Remote-SSH gives guest code a channel to the host VS Code client. Check the
+# host-side settings that hand it Git credentials or forward its ports.
+check_vscode_settings() {
+  local base="${XDG_CONFIG_HOME:-$HOME/.config}" app
+  local -a dirs=()
+  for app in Code 'Code - Insiders'; do
+    [ -d "$base/$app/User" ] && dirs+=("$base/$app/User")
+  done
+  if [ "${#dirs[@]}" = 0 ]; then
+    echo 'SKIP  host VS Code settings (no VS Code user data found)'
+    return
+  fi
+  doctor_check 'a host VS Code profile blocks Git credential handoff and port auto-forwarding' \
+    /usr/bin/python3 -IB "$VMDIR/lib/host-vscode-settings.py" "${dirs[@]}"
+}
+
 cmd_doctor() {
   local name="$1" failed=0 installed=/usr/local/lib/devvm/allowlist.conf checkout="$VMDIR/allowlist.conf"
   local net expected_dns actual_dns expected_domains file
@@ -92,6 +108,7 @@ cmd_doctor() {
   for file in haproxy.cfg bogons allowed-domains; do
     doctor_check "$file matches the last successful proxy apply" cmp -s "/etc/devvm/$file" "/run/devvm-proxy-applied/$file"
   done
+  check_vscode_settings
   net="$(incus config device get "$name" eth0 network)" || return 1
   case "$net" in
     devvmbr0|"dvmp-${name##*-}") ;;
