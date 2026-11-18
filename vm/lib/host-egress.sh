@@ -113,6 +113,8 @@ haproxy -c -q -f "$tmp/check.cfg" \
 # against the files in $ETC. So if an apply dies after publishing the files
 # (nft error, failed reload), the next run still sees the change as pending.
 # $APPLIED is under /run: after a reboot the first apply simply restarts.
+# `comm` needs both lists sorted the same way: both come from the
+# `LC_ALL=C sort -u` above ($APPLIED's is a copy of an earlier one).
 APPLIED=/run/devvm-proxy-applied
 proxy_action=none
 if ! cmp -s "$tmp/haproxy.cfg" "$APPLIED/haproxy.cfg" 2>/dev/null; then

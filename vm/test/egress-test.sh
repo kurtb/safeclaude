@@ -62,6 +62,9 @@ expect_raw "two Host headers, allowed then not"                400 $'GET / HTTP/
 expect_raw "two Host headers, not allowed then allowed"        400 $'GET / HTTP/1.1\r\nHost: example.com\r\nHost: archive.ubuntu.com\r\nConnection: close\r\n\r\n'
 expect_raw "request line naming a different host than Host"    400 $'GET http://example.com/ HTTP/1.1\r\nHost: archive.ubuntu.com\r\nConnection: close\r\n\r\n'
 expect_raw "no Host header"                                    400 $'GET / HTTP/1.1\r\nConnection: close\r\n\r\n'
+# HTTP/2 without TLS: whatever the proxy makes of it, a non-allowlisted name must not get through.
+h2="$(code --http2-prior-knowledge -H 'Host: example.com' http://archive.ubuntu.com/)"
+if [ "${h2:-000}" = 200 ]; then bad "cleartext HTTP/2 with a non-allowlisted name" "got HTTP 200"; else ok "cleartext HTTP/2 with a non-allowlisted name is refused (${h2:-000})"; fi
 expect "using the HTTP port as a CONNECT proxy"                blocked -p -x http://archive.ubuntu.com:80 https://example.com/
 
 echo "An allowlisted name cannot be used to reach private addresses (SSRF)"

@@ -107,7 +107,8 @@ claimed solved:
   address the host's DNS returns for an allowlisted name; there is no pinned
   IP list behind it to catch a poisoned answer. Private and metadata addresses
   are still refused. TLS still protects HTTPS content, since the guest
-  verifies the real certificate.
+  verifies the real certificate. The refused ranges do not include the host's
+  own public addresses, or a LAN that uses non-private address space.
 - **Subdomain DNS tunneling.** `server=/<zone>/…` resolves any subdomain of an
   allowlisted zone, so a slow DNS tunnel under such a zone is possible.
 - **General-purpose allowlisted hosts** (`github.com`, `sentry.io`,
