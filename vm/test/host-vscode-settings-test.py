@@ -36,26 +36,28 @@ class VSCodeSettingsTests(unittest.TestCase):
                               env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent",
                                    "XDG_CONFIG_HOME": str(self.config)}, timeout=10)
 
+    def assertAdvisory(self, result, status):
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"{status}  host VS Code Remote-SSH settings (advisory", result.stdout)
+        self.assertNotIn("FAIL", result.stdout + result.stderr)
+
     def test_skips_without_vscode(self):
-        result = self.doctor()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("SKIP  host VS Code settings", result.stdout)
+        self.assertAdvisory(self.doctor(), "SKIP")
 
     def test_default_profile_with_jsonc(self):
         self.write("settings.json", REQUIRED)
         result = self.doctor()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("OK    a host VS Code profile", result.stdout)
+        self.assertAdvisory(result, "INFO")
         self.assertIn("profile 'Default' sets all required values", result.stdout)
+        self.assertIn("cannot tell which profile a connection uses", result.stdout)
 
-    def test_missing_and_true_values_fail(self):
+    def test_unconfigured_vscode_does_not_fail_doctor(self):
         self.write("settings.json", '{"remote.autoForwardPorts": false, "git.terminalAuthentication": true}')
         result = self.doctor()
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("FAIL  a host VS Code profile", result.stderr)
+        self.assertAdvisory(result, "WARN")
         for key in ("git.terminalAuthentication", "github.gitAuthentication", "git.useIntegratedAskPass"):
-            self.assertIn(f'"{key}": false', result.stderr)
-        self.assertNotIn('"remote.autoForwardPorts": false', result.stderr)
+            self.assertIn(f'"{key}": false', result.stdout)
+        self.assertNotIn('"remote.autoForwardPorts": false', result.stdout)
 
     def test_dedicated_profile_by_name(self):
         self.write("settings.json", "{}")
@@ -63,16 +65,22 @@ class VSCodeSettingsTests(unittest.TestCase):
         self.write("globalStorage/storage.json",
                    json.dumps({"userDataProfiles": [{"location": "-1a2b", "name": "devvm"}]}))
         result = self.doctor()
-        self.assertIn("OK    a host VS Code profile", result.stdout)
+        self.assertAdvisory(result, "INFO")
         self.assertIn("profile 'devvm' sets all required values", result.stdout)
-        self.assertIn("profile 'Default' needs:", result.stderr)
+        self.assertIn("profile 'Default' needs:", result.stdout)
 
-    def test_unparseable_settings_fail(self):
+    def test_separate_user_data_dir(self):
+        self.user = self.config / "devvm-vscode" / "User"
+        self.write("settings.json", REQUIRED)
+        result = self.doctor()
+        self.assertAdvisory(result, "INFO")
+        self.assertIn("devvm-vscode profile 'Default' sets all required values", result.stdout)
+
+    def test_unparseable_settings_warn(self):
         self.write("settings.json", '{"remote.autoForwardPorts": false')
         result = self.doctor()
-        self.assertIn("cannot parse", result.stderr)
-        self.assertIn("FAIL  a host VS Code profile", result.stderr)
-
+        self.assertAdvisory(result, "WARN")
+        self.assertIn("cannot parse", result.stdout)
 
 
 if __name__ == "__main__":

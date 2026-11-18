@@ -1,9 +1,10 @@
 """Read-only check of host VS Code settings used for devvm Remote-SSH.
 
 Usage: host-vscode-settings.py USER_DIR...  (e.g. ~/.config/Code/User)
-Exit 0 when at least one profile sets every required value. The guest
-controls the VS Code server and its machine settings, so these are only
-checked on the host.
+Exit 0 when at least one profile sets every required value. This does not
+show which profile a connection uses or which accounts are signed in. The
+guest controls the VS Code server and its machine settings, so these are
+only checked on the host.
 """
 import json
 import os
@@ -94,18 +95,15 @@ def main(user_dirs):
             try:
                 settings = load(path)
             except (OSError, ValueError) as e:
-                print(f"  {label}: cannot parse {path}: {e}", file=sys.stderr)
+                print(f"      {label}: cannot parse {path}: {e}")
                 continue
             missing = [k for k in REQUIRED if settings.get(k) is not False]
             if missing:
-                print(f"  {label} needs: " + ", ".join(f'"{k}": false' for k in missing),
-                      file=sys.stderr)
+                print(f"      {label} needs: " + ", ".join(f'"{k}": false' for k in missing))
             else:
                 good.append(label)
     for label in good:
-        print(f"  {label} sets all required values")
-    if good:
-        print("  Connect to devvm hosts only from such a profile, with no GitHub account signed in.")
+        print(f"      {label} sets all required values")
     return 0 if good else 1
 
 
