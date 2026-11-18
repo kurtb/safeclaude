@@ -29,6 +29,11 @@ case "$1" in
   info) test -e /run/name && { cat /run/state; } ;;
   init) echo "$3" > /run/name; echo 'Status: STOPPED' > /run/state ;;
   config) [[ $2 == device && $3 == get && $5 == eth0 && $6 == network ]] && cat /run/net ;;
+  list)
+    jq -n --arg name "$(cat /run/name)" --arg net "$(cat /run/net)" \
+      --slurpfile extra /run/extra-device '
+      [{ $name, expanded_devices: ({eth0: {type: "nic", network: $net},
+                                    root: {type: "disk", path: "/", pool: "default"}} + $extra[0]) }]' ;;
   start) echo 'Status: RUNNING' > /run/state ;;
   stop) echo 'Status: STOPPED' > /run/state ;;
   delete) rm /run/state ;;
@@ -42,6 +47,7 @@ echo 'apply installed egress' >> /run/incus-calls
 test ! -f /run/fail-apply
 EGRESS
 cd /run
+echo '{}' > extra-device
 touch fail-apply
 if "$cli" up --name driver; then echo "up ignored failed enforcement"; exit 1; fi
 if grep -q '^start ' incus-calls; then exit 1; fi
@@ -49,6 +55,13 @@ grep -E '^network create dvmp-.*ipv4.nat=false ipv4.firewall=false ipv6.address=
 grep -E '^init images:ubuntu/24.04/cloud .* --vm .*boot.autostart=false --network dvmp-' incus-calls
 grep -Fx 'server=/installed-only.test/1.1.1.1' incus-calls
 rm fail-apply
+for device in disk nic; do
+  jq -n --arg type "$device" '{inherited: {$type}}' > extra-device
+  : > incus-calls
+  if "$cli" up --name driver; then echo "accepted extra $device"; exit 1; fi
+  if grep -q '^start ' incus-calls; then exit 1; fi
+done
+echo '{}' > extra-device
 : > incus-calls
 "$cli" up --name driver
 name=$(cat name)
