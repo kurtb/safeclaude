@@ -111,9 +111,63 @@ claude --dangerously-skip-permissions  # fine here: egress is capped on the host
 ```
 
 You are `dev`, not root (Claude's skip-permissions mode and minikube's docker
-driver both refuse root), with `docker` access and passwordless `sudo`. Anything
-the project needs beyond git/`gh`/Docker/Claude Code is the repo's own bootstrap
-step. If a download fails with "Could not resolve host", that host isn't on the
+driver both refuse root), with `docker` access and passwordless `sudo`.
+
+`guest-setup.sh` installs only git/`gh`/Docker/Claude Code. For the everyday
+toolbox the container image used to bake in, run the optional second script as
+`dev` (idempotent; re-run any time):
+
+```bash
+bash ~/workspace/safeclaude/vm/guest-tools.sh          # everything, ~1 min
+bash ~/workspace/safeclaude/vm/guest-tools.sh agents   # or one group
+```
+
+| Group | Installs |
+| --- | --- |
+| `base` | zsh, fzf, ripgrep, jq, tmux, tree, htop, build-essential, Python venv/pip, shellcheck, hadolint, git-delta, Neovim |
+| `node` | Node.js (via fnm; the current LTS line by default) and Bun |
+| `mise` | [mise](https://mise.jdx.dev), for per-project tool versions (`mise.toml` / `.tool-versions`) |
+| `agents` | Codex, Gemini and Cursor CLIs, plus the `yolo-claude` / `yolo-codex` / `yolo-gemini` / `yolo-cursor` aliases. **Turns off Claude Code's one-time bypass-permissions warning** (see below) |
+| `git` | delta as the pager; `user.name` / `user.email` if you pass `GIT_USER_NAME` / `GIT_USER_EMAIL` |
+
+Open a new shell afterwards to pick up `PATH` and the aliases.
+
+**Node versions.** The default is the newest LTS line. Re-running the `node`
+group is how you move:
+
+```bash
+bash vm/guest-tools.sh node                   # move the default up to the newest LTS
+NODE_VERSION=<major> bash vm/guest-tools.sh node   # make a specific line the default
+fnm install 24 && fnm use 24                  # switch only the current shell
+fnm ls                                        # what's installed
+```
+
+Older versions stay installed, and globally installed npm tools (`gemini`) live
+outside any one Node version, so they survive a switch. For a version pinned
+per project, put it in the repo's `mise.toml`; mise takes over Node only inside
+a directory whose config names it.
+
+Things to know:
+
+- **It changes a Claude Code safety default.** The `agents` group sets
+  `skipDangerousModePermissionPrompt` in `~/.claude/settings.json`, so
+  `yolo-claude` starts without the one-time acceptance screen. Run it with
+  `DEVVM_KEEP_BYPASS_PROMPT=1` to keep the prompt.
+- **It trusts upstream.** It runs the Bun and Cursor installers and fetches the
+  latest Neovim, fnm and Codex releases with no checksum check, as the
+  container image does (hadolint and mise are checksum-verified). The egress allowlist limits where code can send data,
+  not what runs inside the VM.
+- **mise fetches tools from wherever they are published.** Its version index
+  and the common sources (GitHub releases, `nodejs.org`, `dl.google.com`) are
+  on the allowlist; a tool hosted elsewhere fails with "Could not resolve
+  host" until you `devvm allow` that host.
+- **Don't edit `~/.config/devvm/shellrc.sh`.** It holds the `PATH` entries and
+  aliases and is rewritten on every run; put your own settings in `~/.bashrc`
+  or `~/.zshrc`.
+
+Anything beyond that is the repo's own bootstrap step.
+
+If a download fails with "Could not resolve host", that host isn't on the
 allowlist. Add it **on the host** (not in the VM):
 
 ```bash

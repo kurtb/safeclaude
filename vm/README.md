@@ -16,6 +16,7 @@ that can be shared.
 | `allowlist.conf` — egress allowlist (domain names) | `drivers/linux-incus.sh` (implemented) |
 | `guest-setup.sh` — guest setup, run by hand inside the VM | `drivers/darwin-lima.sh` (stub) |
 | `lib/resolve-allowlist.sh` — domains → SSRF-filtered CIDRs | `drivers/windows-wsl2.sh` (stub) |
+| `guest-tools.sh` — optional dev toolbox + agent CLIs, run by hand as `dev` | |
 | `lib/host-egress.sh` + `proxy/squid.conf` — dest-IP pin + SNI proxy + DNS + nftables | |
 | `devvm.sh` — CLI + OS detection/dispatch | |
 
@@ -150,6 +151,18 @@ reachable from localhost only (see Known limitations), retired in a follow-up.
 
 - Host nested virt on (`kvm_intel/amd nested=1`) for minikube `kvm2`, then
   `minikube start --driver=docker` inside the guest.
+
+## Guest toolbox
+
+`guest-setup.sh` (root, required) installs the minimum: git, `gh`, Docker, Claude
+Code and the `dev` user. `guest-tools.sh` (as `dev`, optional) adds what the
+container image bakes in — shell tools, compilers, Python, Node (current LTS,
+switchable), Bun, mise, linters, Neovim, the Codex/Gemini/Cursor CLIs and the
+`yolo-*` aliases — in five groups (`base`, `node`, `mise`, `agents`, `git`).
+Both are idempotent and are run by hand inside the VM; see
+[QUICKSTART.md](QUICKSTART.md). Everything `guest-tools.sh`
+downloads is on `allowlist.conf`, which also carries the two hosts mise itself
+needs (`mise-versions.jdx.dev`, `tuf-repo-cdn.sigstore.dev`).
 
 ## Adding hosts
 
