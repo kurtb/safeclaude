@@ -184,8 +184,8 @@ clone_repo() {
 }
 
 wait_agent() {
-  for _ in $(seq 1 60); do incus exec "$name" -- true >/dev/null 2>&1 && return 0; sleep 2; done
-  echo "guest agent not ready after 120s (check incus list)" >&2
+  for _ in $(seq 1 150); do incus exec "$name" -- true >/dev/null 2>&1 && return 0; sleep 2; done
+  echo "guest agent not ready after 5 minutes. Check incus list and retry devvm up on the same VM." >&2
   return 1
 }
 

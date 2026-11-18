@@ -109,6 +109,8 @@ def main(*, candidates=False):
         ("dnsmasq-base", "dnsmasq", None), ("jq", "jq", None),
         ("bind9-dnsutils", "dig", None),
     ]
+    if candidates:
+        checks.append(("git", None, None))
     if "incus-base" in cache and cache["incus-base"].is_installed:
         checks.insert(1, ("incus-base", None, "7.5.1"))
     failed = False

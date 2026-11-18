@@ -21,12 +21,17 @@ LC_ALL=C awk '
 
 # Keep absolute install paths inside private mounts, and prevent network
 # access even if a stub is missing. No host service or firewall is changed.
+if [[ $EUID != 0 ]] && ! sudo -n true 2>/dev/null; then
+  echo "Static checks passed. SKIP namespace tests (run sudo vm/test/run.sh)."
+  exit 0
+fi
 sudo unshare --mount --net --propagation private bash -eu -o pipefail -s "$vm" <<'ISOLATED'
 vm=$1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 cp -L /etc/{passwd,group,resolv.conf} "$scratch"
 awk_bin=$(readlink -f "$(command -v awk)")
+nft_bin=$(command -v nft)
 for path in /usr/local/lib /etc /run; do mount -t tmpfs tmpfs "$path"; done
 cp "$scratch"/{passwd,group,resolv.conf} /etc
 mkdir -p /etc/systemd/system /usr/local/lib/devvm "$scratch/bin"
@@ -65,13 +70,35 @@ grep -Fx "$host" "$extra" >/dev/null
 grep -Fx "$host" "$live" >/dev/null
 grep -Fx "server=/$host/1.1.1.1" /run/test-dns >/dev/null
 grep -F 'table inet devvm' /run/test-rules >/dev/null
+"$nft_bin" -c -f /run/test-rules
 grep -Fx 'restart devvm-proxy.service' /run/test-systemctl >/dev/null
 "$cli" allow "$host"
 [[ $(grep -Fxc "$host" "$extra") == 1 ]]
 if "$cli" allow '*.invalid'; then echo "accepted a wildcard" >&2; exit 1; fi
+"$cli" allow | grep -F "$host"
+if "$cli" allow --refresh "$host"; then exit 1; fi
+grep -Fx "$host" "$extra"
+for bad in '192.0.2.1' 'bad.test # comment' 'bad;host.test' 'host.test:443'; do
+  if "$cli" allow "$bad"; then exit 1; fi
+done
+base=/usr/local/lib/devvm/allowlist.conf
+echo installed-only.test >> "$base"
+"$cli" allow installed-only.test | grep -F 'already allowed: installed-only.test'
+if grep -Fx installed-only.test "$extra"; then exit 1; fi
+"$cli" allow cidr:legacy.test > /run/output 2>&1
+grep -F 'no longer needed' /run/output
+grep -Fx legacy.test "$extra"
+cp "$base" /run/base
+echo 'not a hostname' >> "$base"
+if "$cli" allow retry.test >/run/output 2>&1; then exit 1; fi
+grep -F 'NOT fully applied' /run/output
+mv /run/base "$base"
+"$cli" allow retry.test
+grep -Fxc 'server=/retry.test/1.1.1.1' /run/test-dns | grep -Fx 1
 : >/run/test-systemctl
 "$cli" allow --rm "$host"
 if grep -F "$host" "$extra" "$live" /run/test-dns; then exit 1; fi
 grep -Fx 'restart devvm-proxy.service' /run/test-systemctl >/dev/null
+"$vm/test/driver-test.sh" "$vm" "$scratch/bin"
 ISOLATED
 echo "VM checks passed."
