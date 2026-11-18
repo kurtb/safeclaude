@@ -17,31 +17,21 @@ cat /sys/module/kvm_intel/parameters/nested 2>/dev/null \
 #   If it's N: echo "options kvm_intel nested=1" | sudo tee /etc/modprobe.d/kvm.conf
 #   then: sudo modprobe -r kvm_intel && sudo modprobe kvm_intel   (AMD: kvm_amd)
 
-# 0b. Configure a supported Incus APT source first (see below).
-sudo apt update
-sudo apt install -y incus haproxy dnsmasq-base nftables jq bind9-dnsutils python3-apt curl git
-sudo incus admin init --minimal                 # accept the minimal defaults
+# From a trusted checkout or the unpacked release tarball, run the VM installer.
+# In a checkout:
+sudo ./vm/install-host.sh
+# In the release tarball: sudo ./devvm/install-host.sh
 
-# 0c. Let your user drive Incus without sudo.
-sudo usermod -aG incus-admin "$USER"            # log out/in (or: newgrp incus-admin)
-
-# 0d. Get the code.
-git clone https://github.com/kurtb/safeclaude.git
-cd safeclaude
+# On a new Incus host, create a storage pool and default profile.
+sudo incus admin init --minimal
+# incus-admin grants host administrator privileges. Add your own trusted user.
+sudo usermod -aG incus-admin "$USER"
+# Log out and back in to activate the group.
 ```
 
-Use Debian or Ubuntu with HAProxy 2.8+ and Incus 7.5.1+. For Ubuntu 24.04, configure the [Zabbly stable APT repository](https://github.com/zabbly/incus#stable-repository) before installing Incus. The installer checks installed versions against current signed package indexes. Use `./vm/install-host.sh --check` after `sudo apt update` to see which packages need attention.
+The installer refreshes APT and installs the latest stable Incus and required host packages on Ubuntu 24.04/26.04 and Debian 13 (amd64 or arm64). It uses the [signed Zabbly stable channel](https://github.com/zabbly/incus#stable-repository) and checks the installed package provenance. A configured Incus host can keep its existing storage and profile. Run `incus storage list` before initializing an existing host.
 
-## Phase 1 — install the egress enforcement root-owned (one-time)
-
-```bash
-sudo ./vm/install-host.sh      # copies the egress script + config to
-                               # /usr/local/lib/devvm (root-owned) and installs
-                               # the devvm-proxy service
-```
-
-Why: the driver runs the **root-owned installed copy**, never your checkout, so
-nothing a repo-writer (or an agent) changes can run as root.
+Use `./vm/install-host.sh --check` for a read-only check against local APT metadata. On another supported Debian/Ubuntu configuration with manually provisioned packages, `sudo ./vm/install-host.sh --skip-packages` checks the same requirements and installs the CLI. The minimum versions are Incus 7.5.1 and HAProxy 2.8.
 
 ## Phase 2 — boot a project VM
 

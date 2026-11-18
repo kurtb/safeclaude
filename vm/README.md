@@ -148,7 +148,7 @@ Run `vm/test/project-isolation.sh VM_A VM_B` against two running project VMs aft
 
 ### Host setup (prerequisites)
 
-0. Follow the [host prerequisites](QUICKSTART.md#phase-0--host-prerequisites-one-time) for Incus 7.5.1+, HAProxy 2.8+ and the DNS and firewall tools. Refresh APT indexes and run `./install-host.sh --check` from this directory.
+0. Follow the [host quickstart](QUICKSTART.md) for KVM, storage initialization and Incus group access. The installer sets up the signed stable Incus APT channel and the current required packages on supported distributions.
 1. `sudo ./install-host.sh` — installs the egress enforcement root-owned to
    `/usr/local/lib/devvm` (the driver runs that copy, never the checkout) and
    the dedicated proxy and firewall units. Incus requires `devvm-firewall.service`
