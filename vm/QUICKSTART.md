@@ -17,10 +17,9 @@ cat /sys/module/kvm_intel/parameters/nested 2>/dev/null \
 #   If it's N: echo "options kvm_intel nested=1" | sudo tee /etc/modprobe.d/kvm.conf
 #   then: sudo modprobe -r kvm_intel && sudo modprobe kvm_intel   (AMD: kvm_amd)
 
-# 0b. Install Incus + the egress tooling. squid-OPENSSL (stock squid lacks ssl-bump).
+# 0b. Install Incus + the egress tooling.
 sudo apt update
-sudo apt install -y incus squid-openssl dnsmasq-base nftables openssl \
-                    bind9-dnsutils jq curl git
+sudo apt install -y incus haproxy dnsmasq-base nftables curl git
 sudo incus admin init --minimal                 # accept the minimal defaults
 
 # 0c. Let your user drive Incus without sudo.
@@ -31,15 +30,15 @@ git clone https://github.com/kurtb/safeclaude.git
 cd safeclaude
 ```
 
-Why: Incus is the VM manager; Squid/dnsmasq/nftables are the host-side egress
+Why: Incus is the VM manager; HAProxy/dnsmasq/nftables are the host-side egress
 gates; `vm/` carries the tooling.
 
 ## Phase 1 — install the egress enforcement root-owned (one-time)
 
 ```bash
 sudo ./vm/install-host.sh      # copies the egress script + config to
-                               # /usr/local/lib/devvm (root-owned) and makes
-                               # the Squid splice cert
+                               # /usr/local/lib/devvm (root-owned) and installs
+                               # the devvm-proxy service
 ```
 
 Why: the driver runs the **root-owned installed copy**, never your checkout, so
@@ -55,7 +54,7 @@ devvm                          # create network+VM (first run), apply egress, bo
 
 What happens, in order: create `devvmbr0` (Incus firewall off, NAT off, DNS
 off — we own all three) → `incus init` the VM stopped → `sudo` the host egress
-(dest-IP pin + SNI proxy + allowlist DNS + default-deny) → start → root shell in
+(by-name proxy + allowlist DNS + default-deny) → start → root shell in
 a **bare** VM. Nothing is installed at boot.
 
 Set the VM up by hand, in that root shell:
@@ -78,19 +77,27 @@ later `devvm` runs also clone a public https origin into
 # From INSIDE the VM shell:
 curl -sS --max-time 5 https://example.com            && echo UNEXPECTED || echo "blocked (good)"
 curl -sS --max-time 5 https://api.github.com/zen     && echo "allowed (good)"
-# The bypass test — must be BLOCKED (dest-IP pin catches the forged resolve):
-curl -sS --max-time 5 --resolve api.github.com:443:1.2.3.4 https://api.github.com/ \
-  && echo UNEXPECTED || echo "bypass blocked (good)"
+# A non-allowlisted name aimed at an allowed host's address — must be BLOCKED:
+curl -sS --max-time 5 --resolve example.com:443:"$(getent hosts api.github.com | awk '{print $1}')" \
+  https://example.com/ && echo UNEXPECTED || echo "blocked (good)"
+# An allowed name aimed at a bogus address — WORKS, and that is the point: the
+# proxy ignores 1.2.3.4 and connects to the real api.github.com (valid cert).
+curl -sS --max-time 5 --resolve api.github.com:443:1.2.3.4 https://api.github.com/zen \
+  && echo "reached the real host (good)"
+# Nothing but web traffic leaves:
+timeout 5 bash -c 'exec 3<>/dev/tcp/github.com/22' && echo UNEXPECTED || echo "ssh blocked (good)"
 exit
 
 # From the HOST — look at what's enforcing it:
-sudo nft list table inet devvm        # the dest-IP set + input/forward/nat chains
+sudo nft list table inet devvm        # DNAT to the proxy + input/forward chains
+systemctl status devvm-proxy          # the by-name proxy
+journalctl -u devvm-proxy -n 20       # one line per connection: name -> address
 incus network show devvmbr0           # firewall/nat/dns all off (we own them)
 incus list                            # your VM
 ```
 
-Why: this is the whole point — confirm egress is allowlisted *and* the
-`--resolve` front-door is shut, from outside the guest's control.
+Why: this is the whole point — confirm that only allowlisted *names* get out,
+and that the guest cannot choose where a connection really goes.
 
 ## Phase 4 — log in and start Claude inside
 
@@ -174,12 +181,10 @@ allowlist. Add it **on the host** (not in the VM):
 devvm allow nodejs.org static.rust-lang.org   # add + apply live, no VM restart
 devvm allow                                   # list your extras
 devvm allow --rm nodejs.org                   # take one back out
-devvm allow --refresh                         # re-resolve only (see below)
+devvm allow --refresh                         # re-apply, change nothing
 ```
 
-If a host that *is* allowed fails with "Couldn't connect to server", its IP has
-rotated away from the pinned snapshot: `devvm allow --refresh` re-resolves the
-whole list. Details in [README.md](README.md#adding-hosts).
+Details in [README.md](README.md#adding-hosts).
 
 Edit the clone in-guest (`devvm shell`), or move files with `incus file`. VS Code
 Remote-SSH is a planned follow-up — the cloud image ships no SSH server or host

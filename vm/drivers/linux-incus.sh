@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Linux driver: Incus VM, CLONE-ONLY, host-enforced egress via dest-IP pin +
-# SNI proxy (lib/host-egress.sh) + allowlist-only DNS (Incus's own dnsmasq,
+# Linux driver: Incus VM, CLONE-ONLY, host-enforced egress via a by-name proxy
+# (lib/host-egress.sh + proxy/haproxy.cfg) + allowlist-only DNS (Incus's own dnsmasq,
 # made allowlist-only here via the network's raw.dnsmasq).
 #
 # Strongest of the OS drivers. No host filesystem is mounted (clone-only), and
@@ -26,7 +26,7 @@ need() { command -v incus >/dev/null || { echo "incus not installed" >&2; exit 1
 # live host). `no-resolv` kills the default upstream; one server=/<domain>/<up>
 # per allowlisted host means only allowlisted zones resolve — everything else
 # gets no upstream => NXDOMAIN. Sourced from the installed root-owned allowlist
-# so DNS shares one list with the nft/Squid layers. Fails loud if absent.
+# so DNS shares one list with the proxy. Fails loud if absent.
 build_raw_dnsmasq() {
   local c conf=""
   for c in /usr/local/lib/devvm/allowlist.conf "$VMDIR/allowlist.conf"; do
@@ -34,7 +34,7 @@ build_raw_dnsmasq() {
   done
   [ -n "$conf" ] || { echo "no allowlist.conf found for DNS (run install-host.sh)" >&2; return 1; }
   # Plus this host's own extras (`devvm allow`), the same file host-egress.sh
-  # merges, so DNS, the SNI proxy and the IP pin stay on one list.
+  # merges, so DNS and the proxy stay on one list.
   local extra=/etc/devvm/allowlist.local
   echo "no-resolv"
   { cat "$conf"; echo; if [ -r "$extra" ]; then cat "$extra"; fi; } \
@@ -45,7 +45,7 @@ build_raw_dnsmasq() {
 ensure_network() {
   if ! incus network show "$NET" >/dev/null 2>&1; then
     # Dedicated bridge; Incus firewalling OFF (our nftables own egress), nat=false
-    # (Squid originates on the host, so the guest needs no NAT — a forward-chain
+    # (the proxy originates on the host, so the guest needs no NAT — a forward-chain
     # hole isn't real egress), dns.mode=none (no auto instance DNS records; the
     # DNS *content* comes from raw.dnsmasq, set just below).
     # VERIFY subnet matches DEVVM_SUBNET in host-egress.sh (10.63.0.0/24).
@@ -119,9 +119,8 @@ wait_agent() {
   echo "WARNING: guest agent not ready after 120s (is the VM running? incus list)" >&2
 }
 
-# Re-apply the allowlist to DNS + proxy + IP pin. Touches no VM, so running
-# guests pick the change up live. Also re-resolves every host, which is the fix
-# when a pinned IP has gone stale.
+# Re-apply the allowlist to DNS + the proxy + the nft rules. Touches no VM, so
+# running guests pick the change up live.
 apply_egress() {
   ensure_network
   # Run the ROOT-OWNED installed copy, not the checkout.
