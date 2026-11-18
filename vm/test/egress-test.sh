@@ -111,6 +111,16 @@ sed -i '/^example\.org$/d' /etc/devvm/allowlist.local; apply; sleep 2
 if [ "$(started)" != "$t0" ]; then ok "removing a host restarts the proxy"; else bad "removing a host" "proxy was not restarted"; fi
 if kill -0 "$hpid" 2>/dev/null; then bad "removing a host cuts open connections" "the connection is still open"; kill "$hpid" 2>/dev/null; else ok "removing a host cuts open connections"; fi
 expect "the proxy works after the restart"                     200 https://pypi.org/simple/pip/
+# An apply that dies after publishing the files but before the proxy picks
+# them up (here: a bad subnet makes nft fail) must not lose the change.
+echo example.org >> /etc/devvm/allowlist.local; apply
+sed -i '/^example\.org$/d' /etc/devvm/allowlist.local
+t1="$(started)"
+if DEVVM_NET="${RIG_NET:-devvmrig0}" DEVVM_SUBNET=not-a-subnet DEVVM_PROXY_IP="$PROXY_IP" DEVVM_PROXY_DNS=127.0.0.1:5399 \
+     /usr/local/lib/devvm/host-egress.sh >/dev/null 2>&1; then bad "apply with a broken firewall step" "it reported success"; fi
+apply; sleep 1
+if [ "$(started)" != "$t1" ]; then ok "a removal interrupted by a failed apply still restarts the proxy on retry"; else bad "removal after a failed apply" "proxy still runs the old list"; fi
+expect "and the removed host is refused by the proxy"          blocked --resolve example.org:443:1.2.3.4 https://example.org/
 if DEVVM_NET=x DEVVM_PROXY_DNS=127.0.0.1:5399 bash -c 'rm -f /usr/local/lib/devvm/.egress-rig; /usr/local/lib/devvm/host-egress.sh' >/dev/null 2>&1; then bad "DEVVM_PROXY_DNS outside the rig" "accepted"; else ok "DEVVM_PROXY_DNS is refused outside the rig"; fi
 touch /usr/local/lib/devvm/.egress-rig
 

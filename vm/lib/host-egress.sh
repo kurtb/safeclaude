@@ -62,10 +62,11 @@ flock -w 120 9 || { echo "another devvm egress apply is still running (waited 12
 # written only by root on the host, never by anything in a guest.
 LOCAL="$ETC/allowlist.local"
 install -d -o root -g root -m 0755 "$ETC"
+check_owned "$ETC"      # it holds the proxy's config as well as the extras
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 cat "$CONF" > "$tmp/list"
 if [ -e "$LOCAL" ]; then
-  check_owned "$ETC"; check_owned "$LOCAL"
+  check_owned "$LOCAL"
   { echo; cat "$LOCAL"; } >> "$tmp/list"
 fi
 # One exact host name per line. A legacy `cidr:` prefix (it used to widen the IP
@@ -74,7 +75,10 @@ fi
 if grep -qE '^cidr:' "$tmp/list"; then
   echo "note: 'cidr:' prefixes in the allowlist are ignored (there is no IP pin to widen any more)" >&2
 fi
-grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$tmp/list" | sed 's/^cidr://' \
+# Trailing whitespace / CRs are trimmed first, so a hand-edited extras file
+# doesn't stop every apply over an invisible character.
+{ grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$tmp/list" || true; } \
+  | sed -e 's/[[:space:]]*$//' -e 's/^[[:space:]]*//' -e 's/^cidr://' \
   | tr '[:upper:]' '[:lower:]' | LC_ALL=C sort -u > "$tmp/domains"
 bad="$(grep -vE '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$' "$tmp/domains" || true)"
 [ -z "$bad" ] || { echo "FATAL: not a plain host name in the allowlist (no inline comments, wildcards or IPs):" >&2; echo "$bad" >&2; exit 1; }
@@ -104,11 +108,17 @@ haproxy -c -q -f "$tmp/check.cfg" \
 #     stay busy; revoking a host must cut them.
 #   hosts were only added -> reload; established connections carry on.
 #   nothing changed -> leave it alone (every `devvm up` runs this script).
+# "Changed" is judged against $APPLIED — a copy of what the RUNNING proxy last
+# loaded, written only after it restarted or reloaded successfully — not
+# against the files in $ETC. So if an apply dies after publishing the files
+# (nft error, failed reload), the next run still sees the change as pending.
+# $APPLIED is under /run: after a reboot the first apply simply restarts.
+APPLIED=/run/devvm-proxy-applied
 proxy_action=none
-if ! cmp -s "$tmp/haproxy.cfg" "$ETC/haproxy.cfg" 2>/dev/null; then
+if ! cmp -s "$tmp/haproxy.cfg" "$APPLIED/haproxy.cfg" 2>/dev/null; then
   proxy_action=restart
-elif ! cmp -s "$tmp/domains" "$ETC/allowed-domains"; then
-  if [ -n "$(LC_ALL=C comm -23 <(LC_ALL=C sort -u "$ETC/allowed-domains") "$tmp/domains")" ]; then
+elif ! cmp -s "$tmp/domains" "$APPLIED/allowed-domains" 2>/dev/null; then
+  if [ -n "$(LC_ALL=C comm -23 "$APPLIED/allowed-domains" "$tmp/domains")" ]; then
     proxy_action=restart
   else
     proxy_action=reload
@@ -175,15 +185,17 @@ NFT
 systemctl daemon-reload
 systemctl enable devvm-proxy.service >/dev/null 2>&1 || true
 proxy_fail() { echo "FATAL: devvm-proxy failed to start (journalctl -u devvm-proxy). Guest egress is CLOSED until it runs." >&2; exit 1; }
-if ! systemctl is-active --quiet devvm-proxy.service; then
-  systemctl restart devvm-proxy.service || proxy_fail
-else
-  case "$proxy_action" in
-    restart) systemctl restart devvm-proxy.service || proxy_fail
-             echo "note: proxy restarted (a host was removed or its config changed); open connections from guests were cut" ;;
-    reload)  systemctl reload devvm-proxy.service || proxy_fail ;;
-    none)    : ;;
-  esac
+if ! systemctl is-active --quiet devvm-proxy.service; then proxy_action=restart; fi
+case "$proxy_action" in
+  restart) systemctl restart devvm-proxy.service || proxy_fail
+           echo "note: proxy (re)started; any open connections from guests were cut" ;;
+  reload)  systemctl reload devvm-proxy.service || proxy_fail ;;
+  none)    : ;;
+esac
+if [ "$proxy_action" != none ]; then
+  install -d -o root -g root -m 0755 "$APPLIED"
+  install -o root -g root -m 0644 "$tmp/haproxy.cfg" "$APPLIED/haproxy.cfg"
+  install -o root -g root -m 0644 "$tmp/domains" "$APPLIED/allowed-domains"
 fi
 
 echo "devvm host egress on $NET ($SUBNET): by-name proxy ($(wc -l < "$ETC/allowed-domains") hosts) + allowlist DNS + default-deny"

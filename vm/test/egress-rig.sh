@@ -58,7 +58,7 @@ down() {
   ip link del "$DEVVM_NET" 2>/dev/null || true
   nft delete table inet devvm 2>/dev/null || true
   rm -f /etc/systemd/system/devvm-proxy.service /etc/devvm/haproxy.cfg /etc/devvm/allowed-domains
-  rm -rf "$RUN" "/etc/netns/$NS" /usr/local/lib/devvm
+  rm -rf "$RUN" "/etc/netns/$NS" /usr/local/lib/devvm /run/devvm-proxy-applied
   rmdir /etc/devvm 2>/dev/null || true      # kept if it holds allowlist.local
   systemctl daemon-reload
 }
