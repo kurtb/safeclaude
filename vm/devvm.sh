@@ -161,8 +161,8 @@ _devvm_allow() {
   # Always re-apply, even when the file didn't change: if an earlier apply
   # failed, the file and the live rules disagree, and a retry must fix that.
   "$drv" refresh _ "" "$_DEVVM_HERE" || {
-    echo "devvm allow: the list was saved but could NOT be applied — live rules are unchanged." >&2
-    echo "  Fix the error above, then run: devvm allow --refresh" >&2
+    echo "devvm allow: the list was saved but was NOT fully applied — DNS, proxy and IP pin may" >&2
+    echo "  now disagree (it still fails closed). Fix the error above, then run: devvm allow --refresh" >&2
     return 1
   }
 }
