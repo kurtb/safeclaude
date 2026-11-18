@@ -17,8 +17,9 @@ cat /sys/module/kvm_intel/parameters/nested 2>/dev/null \
 #   If it's N: echo "options kvm_intel nested=1" | sudo tee /etc/modprobe.d/kvm.conf
 #   then: sudo modprobe -r kvm_intel && sudo modprobe kvm_intel   (AMD: kvm_amd)
 
-# In a directory you control, install the latest release on the host.
-curl -fL --proto '=https' https://github.com/kurtb/safeclaude/releases/latest/download/install.sh -o install.sh && sudo bash ./install.sh
+# Install the latest release as your normal user. The script requests sudo
+# after downloading and checking the bundle, when it needs to change the host.
+curl -fsSL https://github.com/kurtb/safeclaude/releases/latest/download/install.sh | bash
 
 # On a new Incus host, create a storage pool and default profile.
 sudo incus admin init --minimal
@@ -27,7 +28,7 @@ sudo usermod -aG incus-admin "$USER"
 # Log out and back in to activate the group.
 ```
 
-To upgrade the host later, rerun `sudo bash ./install.sh` from the download directory. The saved script resolves the latest stable release on each run. Existing project VMs keep their storage and guest clones. Skip Incus initialization on an already configured host. Use `devvm upgrade` from a project checkout to update that guest's tools.
+To upgrade the host later, rerun the same command. To inspect the installer first, download `install.sh` from the [latest GitHub release](https://github.com/kurtb/safeclaude/releases/latest), read it, then run `bash ./install.sh`. Both paths trust GitHub release contents over HTTPS and resolve the latest stable version. Existing project VMs keep their storage and guest clones. Skip Incus initialization on an already configured host. Use `devvm upgrade` from a project checkout to update that guest's tools.
 
 You can also run `sudo ./vm/install-host.sh` from a trusted checkout or `sudo ./devvm/install-host.sh` from a verified, unpacked release bundle. The installer refreshes APT and installs the latest stable Incus and required host packages on Ubuntu 24.04/26.04 and Debian 13 (amd64 or arm64). It uses the [signed Zabbly stable channel](https://github.com/zabbly/incus#stable-repository) as a host package publisher. The installer checks the provenance of Incus, HAProxy and the named enforcement packages. APT resolves their dependencies using the host’s configured repositories. A configured Incus host can keep its existing storage and profile. Run `incus storage list` before initializing an existing host.
 
