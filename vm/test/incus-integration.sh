@@ -55,5 +55,15 @@ devvm rm
 if incus info "$name" &>/dev/null || incus network show "$net" &>/dev/null; then
   echo "Project resources survived removal" >&2; exit 1
 fi
+# The stock nftables.service flushes the whole ruleset on each of these.
+# Its devvm drop-in must put the same guest firewall back every time.
+for family in inet bridge; do nft -s list table "$family" devvm >"$project/fw-$family"; done
+for action in restart reload stop; do
+  systemctl "$action" nftables.service
+  for family in inet bridge; do
+    nft -s list table "$family" devvm | cmp - "$project/fw-$family" || {
+      echo "$family devvm table not restored after nftables $action" >&2; exit 1; }
+  done
+done
 trap - EXIT
 rm -rf "$project"
