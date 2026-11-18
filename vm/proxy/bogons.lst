@@ -1,0 +1,27 @@
+# Addresses the devvm proxy must never connect to, even for an allowlisted
+# name: loopback, private, link-local (cloud metadata), CGNAT, documentation,
+# multicast and reserved space. One CIDR per line; read by haproxy.cfg.
+#
+# host-egress.sh appends the host's own addresses to this at apply time, so a
+# host with a public address is covered too. Not covered: OTHER machines on a
+# LAN that uses non-private address space.
+#
+# IPv4 only. The proxy separately refuses every non-IPv4 answer, so there is no
+# IPv6 list to keep in step.
+0.0.0.0/8
+10.0.0.0/8
+100.64.0.0/10
+127.0.0.0/8
+169.254.0.0/16
+172.16.0.0/12
+192.0.0.0/24
+192.0.2.0/24
+192.31.196.0/24
+192.52.193.0/24
+192.88.99.0/24
+192.168.0.0/16
+192.175.48.0/24
+198.18.0.0/15
+198.51.100.0/24
+203.0.113.0/24
+224.0.0.0/3

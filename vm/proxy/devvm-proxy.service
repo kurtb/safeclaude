@@ -1,0 +1,33 @@
+# devvm egress proxy — a dedicated HAProxy instance (see /etc/devvm/haproxy.cfg).
+# Installed by vm/install-host.sh; (re)started by host-egress.sh on every apply.
+[Unit]
+Description=devvm egress proxy (HAProxy, allowlist by name)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStartPre=/usr/sbin/haproxy -c -q -f /etc/devvm/haproxy.cfg
+ExecStart=/usr/sbin/haproxy -Ws -f /etc/devvm/haproxy.cfg
+ExecReload=/usr/sbin/haproxy -c -q -f /etc/devvm/haproxy.cfg
+ExecReload=/bin/kill -USR2 $MAINPID
+KillMode=mixed
+# It only reads its config and talks to the network.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# The bridge IP it binds may not exist yet at boot; keep trying. After a
+# reboot it can be up before host-egress.sh has re-applied the nftables rules;
+# that is harmless (it enforces the same allowlist whoever reaches it), and
+# guests are not auto-started on boot.
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

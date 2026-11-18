@@ -1,41 +1,51 @@
 #!/usr/bin/env bash
 # Install the host-side egress enforcement root-owned, so a user/agent that can
 # write the checkout can NOT alter what runs as root.
-# Run once as root:  sudo ./install-host.sh
+# Run once as root (and again after pulling changes):  sudo ./install-host.sh
 set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST=/usr/local/lib/devvm
 
 [ "$(id -u)" = 0 ] || { echo "run as root: sudo $0" >&2; exit 1; }
+command -v haproxy >/dev/null \
+  || { echo "haproxy is not installed. Install it first:  apt install haproxy" >&2; exit 1; }
+# The proxy config uses do-resolve and address matching on variables.
+hv="$(haproxy -v | sed -n '1s/^HAProxy version \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')"
+read -r hmaj hmin <<<"${hv:-0 0}"
+# 2.8 (Ubuntu 24.04) is the oldest version this has been tested on.
+{ [ "$hmaj" -gt 2 ] || { [ "$hmaj" -eq 2 ] && [ "$hmin" -ge 8 ]; }; } \
+  || { echo "haproxy 2.8 or newer is required (found: $(haproxy -v | head -1))" >&2; exit 1; }
 
 install -d -o root -g root -m 0755 "$DEST"
 # Flatten the files host-egress.sh needs into one root-owned dir.
-install -o root -g root -m 0755 "$SRC/lib/host-egress.sh"        "$DEST/host-egress.sh"
-install -o root -g root -m 0755 "$SRC/lib/resolve-allowlist.sh"  "$DEST/resolve-allowlist.sh"
-install -o root -g root -m 0644 "$SRC/allowlist.conf"            "$DEST/allowlist.conf"
-install -o root -g root -m 0644 "$SRC/proxy/squid.conf"          "$DEST/squid.conf"
-
-# Squid splice cert (never presented to clients on a splice; required by the
-# ssl-bump port). Generate once so the first `devvm up` doesn't fail on reload.
-# NOTE: key and cert MUST be written to separate files then concatenated — a
-# single `-keyout X -out X` truncates X twice and leaves only one PEM block, so
-# Squid FATALs the HTTPS port with "missing certificate". The guard also
-# regenerates when the existing file has no valid certificate, so a previously
-# broken pem self-heals on the next run instead of being kept.
-cert=/etc/squid/devvm-proxy.pem
-if [ ! -s "$cert" ] || ! openssl x509 -in "$cert" -noout >/dev/null 2>&1; then
-  install -d -m 0755 /etc/squid
-  k="$(mktemp)"; c="$(mktemp)"
-  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-    -keyout "$k" -out "$c" -subj "/CN=devvm-proxy" >/dev/null 2>&1
-  cat "$c" "$k" > "$cert"           # cert + key in one file (squid tls-cert= wants both)
-  rm -f "$k" "$c"
-  chmod 600 "$cert"
-  echo "Generated Squid splice cert at $cert"
+install -o root -g root -m 0755 "$SRC/lib/host-egress.sh"   "$DEST/host-egress.sh"
+install -o root -g root -m 0644 "$SRC/allowlist.conf"       "$DEST/allowlist.conf"
+install -o root -g root -m 0644 "$SRC/proxy/haproxy.cfg"    "$DEST/haproxy.cfg"
+install -o root -g root -m 0644 "$SRC/proxy/bogons.lst"     "$DEST/bogons.lst"
+# Files from the Squid-based design, no longer used.
+rm -f "$DEST/squid.conf" "$DEST/resolve-allowlist.sh"
+# Upgrade from the Squid-based design: remove its drop-in so Squid releases the
+# ports the new proxy binds. Squid itself is no longer used by devvm.
+if [ -e /etc/squid/conf.d/devvm.conf ]; then
+  rm -f /etc/squid/conf.d/devvm.conf /etc/squid/devvm-allowed-domains /etc/squid/devvm-proxy.pem
+  if systemctl is-active --quiet squid; then
+    systemctl restart squid \
+      || echo "WARNING: squid did not restart cleanly; stop it (systemctl stop squid) before the next 'devvm up'" >&2
+  fi
+  echo "Removed the old Squid drop-in. squid is no longer used by devvm (apt remove squid-openssl if nothing else needs it)."
 fi
 
+# The dedicated proxy instance. host-egress.sh writes its config and starts it;
+# it is not started here because the bridge it binds to may not exist yet.
+unit=/etc/systemd/system/devvm-proxy.service
+unit_changed=1; cmp -s "$SRC/proxy/devvm-proxy.service" "$unit" && unit_changed=0
+install -o root -g root -m 0644 "$SRC/proxy/devvm-proxy.service" "$unit"
+systemctl daemon-reload
+# A running proxy keeps its old unit settings until restarted.
+if [ "$unit_changed" = 1 ]; then systemctl try-restart devvm-proxy.service || true; fi
+
 echo "Installed to $DEST (root-owned). The driver runs $DEST/host-egress.sh via sudo."
-echo "Requires: squid-openssl (stock squid lacks ssl-bump) + openssl. DNS is served by"
-echo "Incus's own dnsmasq (dnsmasq-base) — do NOT install the full dnsmasq service."
-echo "For reboot persistence, enable a systemd unit that runs it before incus.service"
-echo "(or set boot.autostart=false on instances — the driver already does)."
+echo "Requires: haproxy + nftables. DNS is served by Incus's own dnsmasq (dnsmasq-base)"
+echo "— do NOT install the full dnsmasq service. The distro's haproxy.service is not"
+echo "used or modified: devvm runs its own instance, devvm-proxy.service."
+echo "Apply now with:  devvm allow --refresh   (or the next 'devvm up')."
