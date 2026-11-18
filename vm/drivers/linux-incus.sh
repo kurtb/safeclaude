@@ -9,8 +9,7 @@
 # follow-up; the image ships no sshd/host key yet). A new VM boots BARE: nothing
 # is installed at boot; vm/guest-setup.sh is run by hand inside it.
 #
-# Verbs (from ../devvm.sh):  ensure <name> <repo> <vmdir> | shell | stop | rm
-#                            | refresh (re-apply the allowlist; no VM touched)
+# Called by devvm.sh as VERB NAME REPO VMDIR [snapshot-label].
 #
 # STATUS: validated live on ARM Incus 7.5.1 + KVM (create, boot, clone, egress
 # smoke test). Spots still needing a live check are marked VERIFY.
@@ -72,22 +71,22 @@ ensure_network() {
 create_if_absent() {
   incus info "$name" >/dev/null 2>&1 && return 0
   echo "Creating $name (stopped) ..."
-  # init (not launch) so egress is enforced before first boot. CLONE-ONLY: no
-  # disk device, so the host FS is never reachable from the guest.
+  # init (not launch) so egress is enforced before first boot. Only the
+  # Incus-managed root volume is sized here. No host filesystem is attached.
   incus init "$IMAGE" "$name" --vm \
-    -c limits.cpu=4 -c limits.memory=8GiB \
+    -c "limits.cpu=${DEVVM_CPUS:-4}" -c "limits.memory=${DEVVM_MEMORY:-8GiB}" \
+    -d "root,size=${DEVVM_DISK:-40GiB}" -c boot.autostart=false \
     --network "$NET"
   # Don't auto-start on host boot: nft rules aren't persisted, so an autostarted
   # VM could come up before egress is applied (the proxy unit relies on this
   # too: it may be running before the rules exist after a reboot). `devvm`
   # re-applies egress on every ensure before starting.
-  incus config set "$name" boot.autostart=false
   # Nested virt for minikube's kvm2 depends on HOST nested virt being on
   # (kvm_intel/amd nested=1); there's no per-instance VM flag. docker driver
   # needs no nesting. VERIFY on the target host.
 }
 
-is_running() { local s; s="$(incus info "$name" 2>/dev/null)"; printf '%s' "$s" | grep -qi 'Status: RUNNING'; }
+is_running() { local s; s="$(incus info "$name")" && grep -qi '^Status: RUNNING$' <<<"$s"; }
 
 # The account work happens under in the guest: `dev` once guest-setup.sh has run
 # (Claude's --dangerously-skip-permissions and minikube's docker driver both
@@ -126,7 +125,8 @@ clone_repo() {
 
 wait_agent() {
   for _ in $(seq 1 60); do incus exec "$name" -- true >/dev/null 2>&1 && return 0; sleep 2; done
-  echo "WARNING: guest agent not ready after 120s (is the VM running? incus list)" >&2
+  echo "guest agent not ready after 120s (is the VM running? incus list)" >&2
+  return 1
 }
 
 # Re-apply the allowlist to DNS + the proxy + the nft rules. Touches no VM, so
@@ -135,19 +135,55 @@ apply_egress() {
   ensure_network
   # Run the ROOT-OWNED installed copy, not the checkout.
   local egress=/usr/local/lib/devvm/host-egress.sh
-  [ -x "$egress" ] || { echo "host egress not installed; run: sudo \"$VMDIR/install-host.sh\"" >&2; exit 1; }
+  [ -x "$egress" ] || { echo "host egress not installed; from a trusted safeclaude checkout run sudo ./vm/install-host.sh" >&2; exit 1; }
   sudo "$egress"
+}
+
+start_with_egress() {
+  apply_egress                                  # host egress re-applied every run (never fail open)
+  is_running || incus start "$name"
+  wait_agent
 }
 
 cmd_ensure() {
   need; ensure_network; create_if_absent
-  apply_egress                                  # host egress re-applied every run (never fail open)
-  is_running || incus start "$name"
-  wait_agent
+  start_with_egress
   # Nothing is installed at boot: a new VM is a bare machine. Say how to set it up.
   [ "$(guest_user)" = dev ] \
     || echo "NOTE: $name is a bare VM (root shell). To set it up, run vm/guest-setup.sh inside it as root (see vm/QUICKSTART.md)." >&2
   clone_repo
+}
+
+cmd_upgrade() {
+  need
+  incus info "$name" >/dev/null                  # upgrade only an existing instance
+  start_with_egress
+  # Stage only named distribution files; never copy a project clone or host
+  # environment. Keep companion scripts next to guest-setup as in a checkout.
+  local files=(guest-setup.sh)
+  if [ -f "$VMDIR/gh-auth-setup" ]; then files+=(gh-auth-setup); fi
+  tar -C "$VMDIR" -cf - "${files[@]}" | incus exec "$name" -T -- bash -ceu '
+    stage=$(mktemp -d)
+    cleanup() { rm -rf -- "$stage"; }
+    trap cleanup EXIT
+    tar -xf - -C "$stage"
+    bash "$stage/guest-setup.sh"
+  '
+
+  # Setup's idempotent install steps skip an existing Docker or Claude. Bring
+  # those forward too, preserving the locally installed Docker package family.
+  incus exec "$name" -T -- bash -se <<'GUEST'
+packages=()
+for pkg in docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker.io; do
+  if [ "$(dpkg-query -W -f='${db:Status-Status}' "$pkg" 2>/dev/null)" = installed ]; then
+    packages+=("$pkg")
+  fi
+done
+if [ "${#packages[@]}" -gt 0 ]; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade "${packages[@]}"
+fi
+su - dev -s /bin/bash -c 'exec "$HOME/.local/bin/claude" update'
+GUEST
 }
 
 cmd_shell() {
@@ -166,6 +202,22 @@ case "$verb" in
   ensure) cmd_ensure ;;
   refresh) need; apply_egress ;;
   shell)  cmd_shell ;;
+  list)   need; incus list 'devvm-' type=virtual-machine -c ns --format compact ;;
+  upgrade) cmd_upgrade ;;
+  snapshot) need; incus snapshot create "$name" "${5:?missing snapshot label}" </dev/null ;;
+  restore)
+    need
+    label="${5:?missing snapshot label}"
+    incus snapshot show "$name" "$label" >/dev/null
+    # A running VM may restart during restore. Reapply enforcement first,
+    # and keep today's NICs, boot policy and sizing even for legacy snapshots.
+    apply_egress
+    incus snapshot restore "$name" "$label" --diskonly
+    if is_running; then wait_agent; fi ;;
+  doctor) need
+    # shellcheck source=/dev/null
+    source "$VMDIR/lib/doctor.sh"
+    cmd_doctor "$name" ;;
   stop)   need; incus stop "$name" ;;
   rm)     need; incus delete -f "$name" ;;
   *) echo "unknown verb: $verb" >&2; exit 1 ;;
