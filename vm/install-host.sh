@@ -45,7 +45,9 @@ install -o root -g root -m 0755 "$SRC"/lib/{doctor,guest-doctor,guest-editor-set
 [[ -d /usr/local/bin ]] || install -d -o root -g root -m 0755 /usr/local/bin
 install -T -o root -g root -m 0755 "$SRC/host/devvm" "$CLI"
 echo "Installed $CLI; from a project directory, run: devvm"
-if [[ -z $(incus storage list --format csv -c n) ]]; then
+if ! pools=$(incus storage list --format csv -c n); then
+  echo "Could not inspect Incus storage. Check the daemon with: sudo incus info" >&2
+elif [[ -z $pools ]]; then
   echo "Initialize storage for your first VM with: sudo incus admin init --minimal"
 fi
 echo "Apply egress now with: devvm allow --refresh   (or the next 'devvm up')."

@@ -31,6 +31,8 @@ sudo usermod -aG incus-admin "$USER"
 
 The installer refreshes APT and installs the latest stable Incus and required host packages on Ubuntu 24.04/26.04 and Debian 13 (amd64 or arm64). It uses the [signed Zabbly stable channel](https://github.com/zabbly/incus#stable-repository) as a host package publisher. The installer checks the provenance of Incus, HAProxy and the named enforcement packages. APT resolves their dependencies using the host’s configured repositories. A configured Incus host can keep its existing storage and profile. Run `incus storage list` before initializing an existing host.
 
+Installation executes scripts from the distribution directory as root. Use a checkout or release you trust and keep that directory under your control during installation. Regular CLI use loads the installed, root-owned runtime. The installer retains an existing host-configured Zabbly stable repository and its APT trust settings. When adding the repository itself, it verifies the published primary key fingerprint and scopes the key with `Signed-By`.
+
 Use `./vm/install-host.sh --check` for a read-only check against local APT metadata. On another supported Debian/Ubuntu configuration with manually provisioned packages, `sudo ./vm/install-host.sh --skip-packages` checks the same requirements and installs the CLI. The minimum versions are Incus 7.5.1 and HAProxy 2.8.
 
 ## Phase 2 — boot a project VM
@@ -196,7 +198,10 @@ devvm rm        # destroy it (keeps nothing)
 
 ## Learning without KVM/nested virt
 
-To practice the Incus + egress mechanics on a box without nested virt, launch an
-Incus **system container** by hand (`incus launch images:ubuntu/24.04 t1`) and
-apply `host-egress.sh` against its bridge — same networking model, no VM. (The
-`devvm` driver itself uses `--vm`; this is just a low-cost way to see the pieces.)
+On a disposable Ubuntu host with the CLI installed and Incus initialized, run
+`sudo vm/test/incus-integration.sh container` from the checkout. It creates a
+stopped Ubuntu system container and uses the regular CLI to migrate it to a
+project bridge, apply egress, start it, check connectivity, and remove it.
+When the test host is itself a devvm guest, allow the Incus image server on its
+parent with `devvm allow images.linuxcontainers.org`. The inner bridge also
+needs a DNS upstream reachable from that test host (`DEVVM_DNS_UPSTREAM`).

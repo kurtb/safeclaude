@@ -395,7 +395,7 @@ safeclaude
 present. Each arch is built on its own **native** runner (not QEMU) because
 gstack's setup launches Chromium during the build.
 
-The VM release asset, `devvm.tar.gz`, contains the installer and runtime. Download it and `devvm.tar.gz.sha256` from the same release, then run:
+The VM release asset, `devvm.tar.gz`, contains the installer and runtime. Download it and `devvm.tar.gz.sha256` from the trusted GitHub release. The checksum detects an incomplete or corrupted download.
 
 ```bash
 sha256sum -c devvm.tar.gz.sha256
