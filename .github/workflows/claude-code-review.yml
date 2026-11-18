@@ -36,6 +36,11 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Also review pull requests opened by the Devin coding agent. The action
+          # refuses bot-initiated runs unless the bot is named here. Named, not
+          # "*": this job can read the repo and post comments, and each bot let
+          # in is another author whose PR text the reviewer will read.
+          allowed_bots: "devin-ai-integration"
           # Post ONE consolidated review as a single top-level PR comment.
           # We post explicitly via `gh pr comment` rather than relying on the
           # action's auto-post (which does nothing in automation mode) — that
