@@ -7,10 +7,11 @@ CLI=/usr/local/bin/devvm
 
 case "$#:${1-}" in
   1:--check) ;;
-  0:) [ "$(id -u)" = 0 ] || { echo "run as root: sudo $0" >&2; exit 1; } ;;
-  *) echo "usage: $0 [--check]" >&2; exit 2 ;;
+  0:|1:--skip-packages) [ "$(id -u)" = 0 ] || { echo "run as root: sudo $0" >&2; exit 1; } ;;
+  *) echo "usage: $0 [--check | --skip-packages]" >&2; exit 2 ;;
 esac
 
+if [[ $# == 0 ]]; then "$SRC/host/install-packages.sh"; fi
 [[ -x /usr/bin/python3 ]] || { echo "FAIL python3: sudo apt install python3-apt" >&2; exit 1; }
 echo "Checking installed packages against local APT indexes (run sudo apt update first)."
 /usr/bin/python3 -IB "$SRC/host/check-packages.py"
@@ -44,4 +45,9 @@ install -o root -g root -m 0755 "$SRC"/lib/{doctor,guest-doctor,guest-editor-set
 [[ -d /usr/local/bin ]] || install -d -o root -g root -m 0755 /usr/local/bin
 install -T -o root -g root -m 0755 "$SRC/host/devvm" "$CLI"
 echo "Installed $CLI; from a project directory, run: devvm"
+if ! pools=$(incus storage list --format csv -c n); then
+  echo "Could not inspect Incus storage. Check the daemon with: sudo incus info" >&2
+elif [[ -z $pools ]]; then
+  echo "Initialize storage for your first VM with: sudo incus admin init --minimal"
+fi
 echo "Apply egress now with: devvm allow --refresh   (or the next 'devvm up')."

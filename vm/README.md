@@ -131,7 +131,7 @@ most of them. Neither can be configured away in Squid's intercept mode.
 **Validated in the local rig** ([`test/egress-rig.sh`](test/egress-rig.sh)): the
 shared `host/install-egress.sh` installer, `host-egress.sh` and `haproxy.cfg`, with a network
 namespace standing in for the guest. [`test/egress-test.sh`](test/egress-test.sh)
-checks 25 things a guest must or must not be able to do, including:
+uses local DNS, HTTP and TLS fixtures to check the policy, including:
 
 - an allowed name works over HTTPS and HTTP;
 - aiming an allowed name at any other IP (`--resolve`) still reaches the real
@@ -142,13 +142,22 @@ checks 25 things a guest must or must not be able to do, including:
 - SSH, other ports, host services and outside DNS are unreachable;
 - with the proxy stopped, nothing gets out.
 
+Run `vm/test/run.sh` for static and isolated CLI/driver checks. On a disposable host with ShellCheck, HAProxy, jq, nftables, dnsmasq-base, dnsutils, OpenSSL, curl, iproute2 and python3-apt, run `vm/test/run.sh --rig` to include the offline egress suite. The rig starts system services and refuses an existing devvm install. Set `RIG_LIVE=1` when invoking the egress test directly to add a live GitHub check. The Incus jobs access the image server and guest package repositories.
+
+For a release or isolation milestone:
+
+1. Review the candidate PR with Devin Review and address its findings. Record the reviewed commit and any deferred findings in Linear.
+2. Run the **VM checks** workflow manually for the full clean-guest and repeated guest-tool installation. Check the container, KVM and offline job results.
+3. For a deeper security review, request a Devin security scan of the candidate. Scope it to the privileged host installer, guest isolation, DNS, proxy, credential handling and release workflow. On subsequent releases, scan new commits against the approved baseline and review the dispositions before tagging.
+4. Publish with the **Release** workflow. The VM update is a minor release while the Docker run model remains available.
+
 **Project isolation.** Each VM has a dedicated `dvmp-<hash>` bridge with a subnet allocated by Incus. The shared `devvmbr0` address hosts the proxy. The host drops inter-bridge forwarding and port-to-port traffic on legacy bridges. Stop a legacy VM once and run `devvm up` to move its NIC. Its files and snapshots stay on disk. Removing a project also removes its bridge.
 
 Run `vm/test/project-isolation.sh VM_A VM_B` against two running project VMs after upgrading your host. It checks HTTPS from each VM, starts a temporary TCP service in each, and verifies that the host can reach both services while the other project cannot. The [quickstart](QUICKSTART.md) covers DNS and proxy checks.
 
 ### Host setup (prerequisites)
 
-0. Follow the [host prerequisites](QUICKSTART.md#phase-0--host-prerequisites-one-time) for Incus 7.5.1+, HAProxy 2.8+ and the DNS and firewall tools. Refresh APT indexes and run `./install-host.sh --check` from this directory.
+0. Follow the [host quickstart](QUICKSTART.md) for KVM, storage initialization and Incus group access. The installer sets up the signed stable Incus APT channel and the current required packages on supported distributions.
 1. `sudo ./install-host.sh` — installs the egress enforcement root-owned to
    `/usr/local/lib/devvm` (the driver runs that copy, never the checkout) and
    the dedicated proxy and firewall units. Incus requires `devvm-firewall.service`

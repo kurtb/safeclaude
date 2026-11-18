@@ -14,7 +14,7 @@ Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) i
 > the container's list below). It has a separate kernel, runs Docker/minikube
 > natively, and keeps enforcement where the guest can't reach it. You work in
 > the VM as an unprivileged `dev` user and log in to GitHub/Claude there
-> yourself (`devvm` never handles credentials). The host installer puts `devvm` on PATH. It supports snapshots, guest upgrades, a diagnostic command, VS Code Remote-SSH and one-file copies. Cloud tools are available as a separate guest install. See
+> yourself (`devvm` never handles credentials). The [VM installer](vm/QUICKSTART.md) installs current stable Incus through APT and puts `devvm` on PATH. It supports snapshots, guest upgrades, a diagnostic command, VS Code Remote-SSH and one-file copies. Cloud tools are available as a separate guest install. See
 > [`vm/README.md`](vm/README.md) for what works today and its known
 > limitations. It is still experimental; the macOS/WSL2 drivers are stubs.
 
@@ -394,6 +394,16 @@ safeclaude
 `safeclaud:latest`, your local build). `docker run` auto-pulls it if it's not
 present. Each arch is built on its own **native** runner (not QEMU) because
 gstack's setup launches Chromium during the build.
+
+The VM release asset, `devvm.tar.gz`, contains the installer and runtime. Download it and `devvm.tar.gz.sha256` from the trusted GitHub release. The checksum detects an incomplete or corrupted download.
+
+```bash
+sha256sum -c devvm.tar.gz.sha256
+tar -xzf devvm.tar.gz
+sudo ./devvm/install-host.sh
+```
+
+Follow the [VM quickstart](vm/QUICKSTART.md) to initialize a new Incus host and boot your project.
 
 Tags / release process:
 

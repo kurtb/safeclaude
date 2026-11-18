@@ -89,7 +89,19 @@ def check_package(cache, name, command=None, minimum=None):
     return f"{installed.version} ({source.site}, {source.label}/{source.archive})"
 
 
-def main():
+def check_candidate(cache, name, minimum):
+    candidate = cache[name].candidate if name in cache else None
+    if not candidate:
+        raise ValueError("no APT candidate")
+    origins = [o for o in candidate.origins if o.archive != "now"]
+    if not origins or not all(supported(o, name.startswith("incus")) for o in origins):
+        raise ValueError("APT candidate has unsupported origin")
+    if minimum and apt_pkg.version_compare(apt_pkg.upstream_version(candidate.version), minimum) < 0:
+        raise ValueError(f"candidate {candidate.version}; need >= {minimum}")
+    return candidate.version
+
+
+def main(*, candidates=False):
     cache = apt.Cache(memonly=True)
     checks = [
         ("incus", None, "7.5.1"), ("incus-client", "incus", "7.5.1"),
@@ -97,12 +109,15 @@ def main():
         ("dnsmasq-base", "dnsmasq", None), ("jq", "jq", None),
         ("bind9-dnsutils", "dig", None),
     ]
+    if candidates and not shutil.which("git"):
+        checks.append(("git", None, None))
     if "incus-base" in cache and cache["incus-base"].is_installed:
         checks.insert(1, ("incus-base", None, "7.5.1"))
     failed = False
     for name, command, minimum in checks:
         try:
-            details = check_package(cache, name, command, minimum)
+            details = (check_candidate(cache, name, minimum) if candidates
+                       else check_package(cache, name, command, minimum))
             print(f"OK   {name}: {details}")
         except (ValueError, OSError, subprocess.CalledProcessError) as err:
             fix = f"sudo apt update && sudo apt install --reinstall {name}"
@@ -119,4 +134,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(candidates=sys.argv[1:] == ["--candidates"]))

@@ -118,11 +118,13 @@ jobs:
           NEXT: ${{ steps.ver.outputs.next }}
         run: |
           set -euo pipefail
+          git archive --format=tar.gz --prefix=devvm/ -o devvm.tar.gz "$NEXT:vm"
+          sha256sum devvm.tar.gz > devvm.tar.gz.sha256
           gh release create "$NEXT" \
             --verify-tag \
             --title "$NEXT" \
             --generate-notes \
-            install.sh safeclaude.zsh
+            install.sh safeclaude.zsh devvm.tar.gz devvm.tar.gz.sha256
 
       - name: Roll back the tag if publish failed
         if: failure() && steps.tag.outcome == 'success'
