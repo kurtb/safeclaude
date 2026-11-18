@@ -218,7 +218,7 @@ cmd_ensure() {
   start_with_egress
   # Nothing is installed at boot: a new VM is a bare machine. Say how to set it up.
   [ "$(guest_user)" = dev ] \
-    || echo "NOTE: $name is a bare VM (root shell). To set it up, run vm/guest-setup.sh inside it as root (see vm/QUICKSTART.md)." >&2
+    || echo "NOTE: $name is a bare VM (root shell). Exit and run devvm upgrade from this project on the host to install the base setup." >&2
   clone_repo
 }
 
@@ -281,7 +281,17 @@ case "$verb" in
     # and keep today's NICs, boot policy and sizing even for legacy snapshots.
     prepare_project
     incus snapshot restore "$name" "$label" --diskonly
-    if is_running; then wait_agent; fi ;;
+    if is_running; then
+      wait_agent
+      # The Incus agent can answer while Ubuntu is still booting and an
+      # immediate graceful stop can miss its ACPI shutdown request.
+      incus exec "$name" -- sh -c '
+        state=$(timeout 120 systemctl is-system-running --wait)
+        case "$state" in running|degraded) exit 0 ;; esac
+        echo "guest boot did not finish after restore (state: ${state:-unknown})" >&2
+        exit 1
+      '
+    fi ;;
   doctor) need
     # shellcheck source=/dev/null
     source "$VMDIR/lib/doctor.sh"
