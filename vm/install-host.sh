@@ -1,58 +1,47 @@
 #!/usr/bin/env bash
-# Install the host-side egress enforcement root-owned, so a user/agent that can
-# write the checkout can NOT alter what runs as root.
-# Run once as root (and again after pulling changes):  sudo ./install-host.sh
+# Install from a trusted checkout; a new shell does not need the checkout.
 set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST=/usr/local/lib/devvm
+CLI=/usr/local/bin/devvm
 
-[ "$(id -u)" = 0 ] || { echo "run as root: sudo $0" >&2; exit 1; }
-command -v haproxy >/dev/null \
-  || { echo "haproxy is not installed. Install it first:  apt install haproxy" >&2; exit 1; }
-# The proxy config uses do-resolve and address matching on variables.
-hv="$(haproxy -v | sed -n '1s/^HAProxy version \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')"
-read -r hmaj hmin <<<"${hv:-0 0}"
-# 2.8 (Ubuntu 24.04) is the oldest version this has been tested on.
-{ [ "$hmaj" -gt 2 ] || { [ "$hmaj" -eq 2 ] && [ "$hmin" -ge 8 ]; }; } \
-  || { echo "haproxy 2.8 or newer is required (found: $(haproxy -v | head -1))" >&2; exit 1; }
+case "$#:${1-}" in
+  1:--check) ;;
+  0:) [ "$(id -u)" = 0 ] || { echo "run as root: sudo $0" >&2; exit 1; } ;;
+  *) echo "usage: $0 [--check]" >&2; exit 2 ;;
+esac
 
-install -d -o root -g root -m 0755 "$DEST"
-# Flatten the files host-egress.sh needs into one root-owned dir.
-install -o root -g root -m 0755 "$SRC/lib/host-firewall.sh" "$DEST/host-firewall.sh"
-install -o root -g root -m 0755 "$SRC/lib/host-egress.sh"   "$DEST/host-egress.sh"
-install -o root -g root -m 0644 "$SRC/allowlist.conf"       "$DEST/allowlist.conf"
-install -o root -g root -m 0644 "$SRC/proxy/haproxy.cfg"    "$DEST/haproxy.cfg"
-install -o root -g root -m 0644 "$SRC/proxy/bogons.lst"     "$DEST/bogons.lst"
-# Files from the Squid-based design, no longer used.
-rm -f "$DEST/squid.conf" "$DEST/resolve-allowlist.sh"
-# Upgrade from the Squid-based design: remove its drop-in so Squid releases the
-# ports the new proxy binds. Squid itself is no longer used by devvm.
-if [ -e /etc/squid/conf.d/devvm.conf ]; then
-  rm -f /etc/squid/conf.d/devvm.conf /etc/squid/devvm-allowed-domains /etc/squid/devvm-proxy.pem
-  if systemctl is-active --quiet squid; then
-    systemctl restart squid \
-      || echo "WARNING: squid did not restart cleanly; stop it (systemctl stop squid) before the next 'devvm up'" >&2
+[[ -x /usr/bin/python3 ]] || { echo "FAIL python3: sudo apt install python3-apt" >&2; exit 1; }
+echo "Checking installed packages against local APT indexes (run sudo apt update first)."
+/usr/bin/python3 -IB "$SRC/host/check-packages.py"
+[[ ${1-} != --check ]] || exit 0
+
+# Never put the launcher or privileged runtime below a writable/symlinked dir.
+for d in /usr/local /usr/local/bin /usr/local/lib "$DEST" "$DEST/drivers" "$DEST/lib"; do
+  [[ -e "$d" || -L "$d" ]] || continue
+  mode="$(stat -c %a "$d")"
+  if [[ ! -d "$d" || -L "$d" || $(stat -c %u "$d") != 0 ]] || (( 8#$mode & 022 )); then
+    echo "refusing unsafe install directory: $d (must be root-owned, not a symlink or group/world writable)" >&2
+    exit 1
   fi
-  echo "Removed the old Squid drop-in. squid is no longer used by devvm (apt remove squid-openssl if nothing else needs it)."
+done
+if [[ -e "$DEST/.egress-rig" ]]; then
+  echo "the test rig owns $DEST; tear down the rig before installing devvm" >&2; exit 1
+fi
+if [[ -L "$CLI" || ( -e "$CLI" && ! -f "$CLI" ) ]] || { [[ -f "$CLI" ]] && ! cmp -s "$SRC/host/devvm" "$CLI"; }; then
+  echo "refusing to overwrite unrelated $CLI; move it aside and retry" >&2; exit 1
 fi
 
-# The dedicated proxy instance. host-egress.sh writes its config and starts it;
-# it is not started here because the bridge it binds to may not exist yet.
-unit=/etc/systemd/system/devvm-proxy.service
-unit_changed=1; cmp -s "$SRC/proxy/devvm-proxy.service" "$unit" && unit_changed=0
-install -o root -g root -m 0644 "$SRC/proxy/devvm-proxy.service" "$unit"
-# The test rig builds a temporary network and never owns Incus boot ordering.
-if [ ! -e "$DEST/.egress-rig" ]; then
-  install -o root -g root -m 0644 "$SRC/proxy/devvm-firewall.service" /etc/systemd/system/
-  systemctl daemon-reload
-  systemctl enable --now devvm-firewall.service
-fi
+"$SRC/host/install-egress.sh"
+install -o root -g root -m 0644 "$SRC/proxy/devvm-firewall.service" /etc/systemd/system/
 systemctl daemon-reload
-# A running proxy keeps its old unit settings until restarted.
-if [ "$unit_changed" = 1 ]; then systemctl try-restart devvm-proxy.service || true; fi
-
-echo "Installed to $DEST (root-owned). The driver runs $DEST/host-egress.sh via sudo."
-echo "Requires: haproxy + nftables. DNS is served by Incus's own dnsmasq (dnsmasq-base)"
-echo "— do NOT install the full dnsmasq service. The distro's haproxy.service is not"
-echo "used or modified: devvm runs its own instance, devvm-proxy.service."
-echo "Apply now with:  devvm allow --refresh   (or the next 'devvm up')."
+systemctl enable --now devvm-firewall.service
+install -d -o root -g root -m 0755 "$DEST/drivers" "$DEST/lib"
+# Only ship named runtime files, never extra files from a working tree.
+install -o root -g root -m 0755 "$SRC"/{devvm,guest-setup,guest-tools,guest-cloud-tools}.sh "$DEST/"
+install -o root -g root -m 0755 "$SRC"/drivers/{linux-incus,incus-editor,darwin-lima,windows-wsl2}.sh "$DEST/drivers/"
+install -o root -g root -m 0755 "$SRC/lib/guest-editor-setup.sh" "$DEST/lib/"
+[[ -d /usr/local/bin ]] || install -d -o root -g root -m 0755 /usr/local/bin
+install -T -o root -g root -m 0755 "$SRC/host/devvm" "$CLI"
+echo "Installed $CLI; from a project directory, run: devvm"
+echo "Apply egress now with: devvm allow --refresh   (or the next 'devvm up')."
