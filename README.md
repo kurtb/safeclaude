@@ -2,9 +2,11 @@
 
 Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) in YOLO mode — `--dangerously-skip-permissions` is fine here because the container has no path to your host filesystem outside the project you mounted, and a default-deny firewall restricts outbound network to an allowlist (Anthropic, OpenAI, Google AI, Langfuse, GitHub, npm, PyPI, gcloud, Pulumi, Kubernetes/Helm, container registries, Tailscale).
 
-> **The container is in maintenance mode.** It gets allowlist and tool-version
-> fixes only — no new features — and will be removed once the VM lane below
-> covers everything it does. New work goes into [`vm/`](vm/README.md).
+> **The container is in maintenance mode.** It gets security, allowlist and
+> tool-version fixes only — no new features — and will be removed once the VM
+> lane below covers everything it does. New work goes into
+> [`vm/`](vm/README.md). Until then everything below this notice still describes
+> the container accurately, and on macOS or Windows it is the only option.
 >
 > **VM lane (`vm/`) — where this project is heading. Linux/Incus only today.**
 > `devvm` boots a per-project VM with a host-enforced, default-deny egress
@@ -14,7 +16,7 @@ Isolated Docker sandbox for running coding agents (Claude Code, Codex, Gemini) i
 > the VM as an unprivileged `dev` user and log in to GitHub/Claude there
 > yourself (`devvm` never handles credentials). See
 > [`vm/README.md`](vm/README.md) for what works today and its known
-> limitations; the macOS/WSL2 drivers are stubs.
+> limitations. It is still experimental; the macOS/WSL2 drivers are stubs.
 
 ## What's included
 
