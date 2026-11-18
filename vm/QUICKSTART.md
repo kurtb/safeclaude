@@ -106,7 +106,7 @@ You are `dev`, not root (Claude's skip-permissions mode and minikube's docker
 driver both refuse root), with `docker` access and passwordless `sudo`.
 
 `guest-setup.sh` installs only git/`gh`/Docker/Claude Code. For the everyday
-toolbox the container image used to bake in, run the optional second script as
+toolbox, run the optional second script as
 `dev` (idempotent; re-run any time):
 
 ```bash
@@ -146,8 +146,8 @@ Things to know:
   `yolo-claude` starts without the one-time acceptance screen. Run it with
   `DEVVM_KEEP_BYPASS_PROMPT=1` to keep the prompt.
 - **It trusts upstream.** It runs the Bun and Cursor installers and fetches the
-  latest Neovim, fnm and Codex releases with no checksum check, as the
-  container image does (hadolint and mise are checksum-verified). The egress allowlist limits where code can send data,
+  latest Neovim, fnm and Codex releases with no checksum check
+  (hadolint and mise are checksum-verified). The egress allowlist limits where code can send data,
   not what runs inside the VM.
 - **mise fetches tools from wherever they are published.** Its version index
   and the common sources (GitHub releases, `nodejs.org`, `dl.google.com`) are

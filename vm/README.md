@@ -1,6 +1,6 @@
 # devvm — platform-neutral per-project dev VM
 
-The VM lane that complements the container: a real-kernel VM with native
+SafeClaude runs each project in a real-kernel VM with native
 Docker/minikube and a **host-enforced, default-deny egress allowlist**. One VM
 per project (`devvm-<basename>-<hash>`), walk-up-and-boot, **clone-only** (no host
 filesystem mounted into the guest).
@@ -82,7 +82,7 @@ creates the unprivileged **`dev`** user (in the `docker` group, with passwordles
 `sudo`). It is idempotent, so re-run it if a step fails. After that `devvm shell`
 logs you in as `dev` — not root, because Claude Code's
 `--dangerously-skip-permissions` and minikube's docker driver both refuse to run
-as root. Guest `sudo` is fine here, unlike in the container: the egress boundary
+as root. Guest `sudo` is fine here because the egress boundary
 is enforced on the host, where guest root can't reach it. A project's own
 toolchain is the project's job — give the repo a bootstrap command.
 
@@ -91,7 +91,7 @@ for you. For a private one the clone is skipped (not fatal): inside the VM run
 `gh-auth-setup` with a token scoped to what *that VM* should be able to do,
 then `git clone`. Run `claude login` inside the VM as well.
 
-## Known limitations (accepted — same posture as the container)
+## Known limitations
 
 These are inherent to a name/IP allowlist and are **not** fixable without a
 full MITM forward proxy or an app-layer gateway. Called out honestly rather than
@@ -116,9 +116,6 @@ claimed solved:
   readable by the agent running there — it is `dev` with `sudo`. Give each VM a
   fine-grained token scoped to its repos and to the least it needs (read-only
   unless the agent should push).
-
-This is the same boundary the container accepts: it stops *accidental* and
-*broad* egress, not a determined exfil via an allowlisted service.
 
 ## Validation status
 
@@ -149,7 +146,7 @@ For a release or isolation milestone:
 1. Review the candidate PR with Devin Review and address its findings. Record the reviewed commit and any deferred findings in Linear.
 2. Run the **VM checks** workflow manually for the full clean-guest and repeated guest-tool installation. Check the container, KVM and offline job results.
 3. For a deeper security review, request a Devin security scan of the candidate. Scope it to the privileged host installer, guest isolation, DNS, proxy, credential handling and release workflow. On subsequent releases, scan new commits against the approved baseline and review the dispositions before tagging.
-4. Publish with the **Release** workflow. The VM update is a minor release while the Docker run model remains available.
+4. Publish the VM archive and checksum from main with the **Release** workflow. Use a major bump when changing the run model or removing a command.
 
 **Project isolation.** Each VM has a dedicated `dvmp-<hash>` bridge with a subnet allocated by Incus. The shared `devvmbr0` address hosts the proxy. The host drops inter-bridge forwarding and port-to-port traffic on legacy bridges. Stop a legacy VM once and run `devvm up` to move its NIC. Its files and snapshots stay on disk. Removing a project also removes its bridge.
 
@@ -188,8 +185,8 @@ The [optional cloud installer](QUICKSTART.md#optional-cloud-tools) adds gcloud, 
 ## Guest toolbox
 
 `guest-setup.sh` (root, required) installs the minimum: git, `gh`, Docker, Claude
-Code and the `dev` user. `guest-tools.sh` (as `dev`, optional) adds what the
-container image bakes in — shell tools, compilers, Python, Node (current LTS,
+Code and the `dev` user. `guest-tools.sh` (as `dev`, optional) adds
+shell tools, compilers, Python, Node (current LTS,
 switchable), Bun, mise, linters, Neovim, the Codex/Gemini/Cursor CLIs and the
 `yolo-*` aliases — in five groups (`base`, `node`, `mise`, `agents`, `git`).
 Both are idempotent. Apply the base setup with `devvm upgrade`. Run the optional groups by hand inside the VM. See
@@ -236,10 +233,7 @@ devvm allow --refresh                    # re-apply the list, change nothing
 
 ## Allowlist / posture
 
-Adding this lane is a **minor** bump (new capability + a new egress surface) per
-CLAUDE.md. `allowlist.conf` is broad (GitHub, package registries, container
-registries, telemetry) and should be diffed against the container's
-`init-firewall.sh`; the long-term fix is a single shared source (TODO).
+Changes to the egress surface, including additions to `allowlist.conf`, require a **minor** bump.
 
 ## Fleet note
 

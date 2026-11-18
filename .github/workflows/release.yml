@@ -1,27 +1,15 @@
 name: Release
 
-# One-click release automation. From the Actions tab, "Run workflow" and pick a
-# bump (patch/minor/major) — or type an explicit version. This computes the next
-# SemVer tag from the latest existing one, creates the git tag + a GitHub Release
-# (with generated notes), then triggers publish.yml to build & push the
-# versioned image (:X.Y.Z, :X.Y, :X).
-#
-# First release: pick `minor` to get v0.1.0 (from v0.0.0).
-#
-# Note: the tag is created with the built-in GITHUB_TOKEN, which does NOT trigger
-# publish.yml's `on: push` tag event, so we dispatch publish.yml explicitly on
-# the new tag (needs `actions: write`).
-
 on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Version bump (ignored if 'version' is set)
+        description: Version bump (ignored when an explicit version is set)
         type: choice
         options: [patch, minor, major]
         default: patch
       version:
-        description: Explicit version, e.g. v1.0.0 (overrides bump)
+        description: Explicit version, e.g. v1.0.0
         type: string
         default: ""
 
@@ -31,103 +19,46 @@ concurrency:
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
-      contents: write   # create the tag + GitHub Release
-      actions: write    # dispatch publish.yml on the new tag
+      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
-          fetch-tags: true
+          persist-credentials: false
 
-      - name: Compute next version
-        id: ver
+      - name: Build and publish the VM release
         env:
           BUMP: ${{ inputs.bump }}
           OVERRIDE: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ -n "$OVERRIDE" ]; then
-            next="$OVERRIDE"
-            case "$next" in v*) ;; *) next="v$next" ;; esac
+          if [[ -n $OVERRIDE ]]; then
+            next="v${OVERRIDE#v}"
           else
-            latest="$(git tag -l 'v*.*.*' --sort=-v:refname | head -1)"
-            latest="${latest:-v0.0.0}"
+            latest=$(git for-each-ref --sort=-version:refname --count=1 --format='%(refname:short)' 'refs/tags/v*.*.*')
+            latest=${latest:-v0.0.0}
             IFS=. read -r major minor patch <<< "${latest#v}"
             case "$BUMP" in
-              major) major=$((major + 1)); minor=0; patch=0 ;;
-              minor) minor=$((minor + 1)); patch=0 ;;
               patch) patch=$((patch + 1)) ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              *) exit 1 ;;
             esac
-            next="v${major}.${minor}.${patch}"
+            next="v$major.$minor.$patch"
           fi
-          if ! printf '%s' "$next" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Refusing to release non-SemVer version: $next" >&2
-            exit 1
+          [[ $next =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo "Invalid version: $next"; exit 1; }
+          if git show-ref --verify --quiet "refs/tags/$next"; then
+            echo "Tag already exists: $next"; exit 1
           fi
-          echo "next=$next" >> "$GITHUB_OUTPUT"
-          echo "Next version: $next"
 
-      # Create the tag first so publish.yml can build the versioned image from
-      # it. Pushing with GITHUB_TOKEN does NOT trigger publish's on:push (GitHub
-      # anti-recursion) — we dispatch it explicitly next.
-      - name: Create tag
-        id: tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NEXT: ${{ steps.ver.outputs.next }}
-        run: |
-          set -euo pipefail
-          if gh release view "$NEXT" >/dev/null 2>&1 || git rev-parse -q --verify "refs/tags/$NEXT" >/dev/null; then
-            echo "release/tag $NEXT already exists" >&2; exit 1
-          fi
-          git tag "$NEXT" "$GITHUB_SHA"
-          git push origin "$NEXT"
-
-      - name: Build & publish the image, then wait for it
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NEXT: ${{ steps.ver.outputs.next }}
-        run: |
-          set -euo pipefail
-          gh workflow run publish.yml --ref "$NEXT"
-          # Find the run we just dispatched (it takes a few seconds to register).
-          # Match ONLY our tag ref (headBranch == $NEXT) and keep polling until it
-          # appears — never fall back to "newest in-progress", or a concurrent
-          # publish dispatch on a different ref could be picked up before our run
-          # registers.
-          run_id=""
-          for _ in $(seq 1 24); do
-            sleep 5
-            run_id="$(gh run list --workflow=publish.yml --event=workflow_dispatch --limit 20 \
-                        --json databaseId,status,headBranch \
-                        --jq "[.[] | select(.headBranch==\"$NEXT\" and .status!=\"completed\")][0].databaseId // empty")"
-            [ -n "$run_id" ] && break
-          done
-          [ -n "$run_id" ] || { echo "could not find the dispatched publish run for $NEXT" >&2; exit 1; }
-          echo "waiting for publish run $run_id to finish..."
-          gh run watch "$run_id" --exit-status
-
-      # Only now that the image is confirmed pushed do we cut the Release, so a
-      # tag/Release never exists without its image.
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NEXT: ${{ steps.ver.outputs.next }}
-        run: |
-          set -euo pipefail
-          git archive --format=tar.gz --prefix=devvm/ -o devvm.tar.gz "$NEXT:vm"
-          sha256sum devvm.tar.gz > devvm.tar.gz.sha256
-          gh release create "$NEXT" \
-            --verify-tag \
-            --title "$NEXT" \
-            --generate-notes \
-            install.sh safeclaude.zsh devvm.tar.gz devvm.tar.gz.sha256
-
-      - name: Roll back the tag if publish failed
-        if: failure() && steps.tag.outcome == 'success'
-        env:
-          NEXT: ${{ steps.ver.outputs.next }}
-        run: git push --delete origin "$NEXT" || true
+          ci/package-vm.sh "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP"
+          sha256sum -c devvm.tar.gz.sha256
+          gh release create "$next" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "$next" --generate-notes \
+            --notes "Install the Linux/Incus VM runner from the attached bundle. See the [installation and Docker migration guide](https://github.com/$GITHUB_REPOSITORY/blob/$next/README.md)." \
+            devvm.tar.gz devvm.tar.gz.sha256
