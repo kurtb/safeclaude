@@ -4,7 +4,15 @@ SafeClaude runs coding agents in an Ubuntu VM on a Linux host with KVM. The `dev
 
 ## Install
 
-Download **devvm.tar.gz** and **devvm.tar.gz.sha256** from the [GitHub release](https://github.com/kurtb/safeclaude/releases/latest). In a directory you control, run:
+From a directory you control on the Linux host, download the release installer and run it:
+
+```bash
+curl -fL --proto '=https' https://github.com/kurtb/safeclaude/releases/latest/download/install.sh -o install.sh && sudo bash ./install.sh
+```
+
+Run `sudo bash ./install.sh` again to upgrade the host. Each run resolves the latest stable GitHub release, downloads the bundle and checksum for that tag, and verifies the archive before installing it. Running it again on the same release reapplies the host installation. Your Incus storage, project VMs and guest clones persist. To update the tools inside a guest, run `devvm upgrade` from its project directory.
+
+To install a specific version, download **devvm.tar.gz** and **devvm.tar.gz.sha256** from that [GitHub release](https://github.com/kurtb/safeclaude/releases) and run:
 
 ```bash
 sha256sum -c devvm.tar.gz.sha256 && tar -xzf devvm.tar.gz && sudo ./devvm/install-host.sh

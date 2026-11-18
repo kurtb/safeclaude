@@ -60,5 +60,5 @@ jobs:
           sha256sum -c devvm.tar.gz.sha256
           gh release create "$next" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "$next" --generate-notes \
-            --notes "Install the Linux/Incus VM runner from the attached bundle. See the [installation and Docker migration guide](https://github.com/$GITHUB_REPOSITORY/blob/$next/README.md)." \
-            devvm.tar.gz devvm.tar.gz.sha256
+            --notes "Download install.sh and run it on the Linux host to install or upgrade to the latest stable release. See the [installation and migration guide](https://github.com/$GITHUB_REPOSITORY/blob/$next/README.md)." \
+            install.sh devvm.tar.gz devvm.tar.gz.sha256
