@@ -6,7 +6,7 @@
 #   - a bridge with the proxy IP on it            (Incus: the devvm bridge)
 #   - a network namespace on that bridge          (Incus: the guest VM)
 #   - an allowlist-only dnsmasq on the bridge IP  (Incus: its own dnsmasq + raw.dnsmasq)
-#   - the REAL install-host.sh + lib/host-egress.sh + proxy/haproxy.cfg
+#   - the REAL host/install-egress.sh + lib/host-egress.sh + proxy/haproxy.cfg
 #
 # So everything egress-related is the production code path; only the Incus
 # plumbing (network create, raw.dnsmasq) is replaced.
@@ -97,7 +97,7 @@ up() {
   echo "nameserver $DEVVM_PROXY_IP" > "/etc/netns/$NS/resolv.conf"
 
   # Install the egress files root-owned, exactly as on a real host.
-  "$VM/install-host.sh" >/dev/null
+  "$VM/host/install-egress.sh" >/dev/null
 
   # Allowlist-only DNS: the same lines the Incus driver puts in raw.dnsmasq.
   if [ -f "$RUN/dnsmasq.pid" ]; then kill "$(cat "$RUN/dnsmasq.pid")" 2>/dev/null || true; fi
