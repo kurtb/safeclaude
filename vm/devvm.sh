@@ -150,7 +150,7 @@ _devvm_allow() {
       if grep -qxF -e "$bare" -e "cidr:$bare" "$file" 2>/dev/null; then
         sudo sed -i -e "/^${esc}\$/d" -e "/^cidr:${esc}\$/d" "$file"
         echo "removed: $bare"
-      elif grep -qxF -e "$bare" -e "cidr:$bare" "$base"; then
+      elif grep -qxF -e "$bare" -e "cidr:$bare" "$base" 2>/dev/null; then
         echo "$bare is on the base list (vm/allowlist.conf), not an extra — edit that file and re-run install-host.sh" >&2
       else
         echo "not in the extras: $bare"
@@ -160,7 +160,11 @@ _devvm_allow() {
 
   # Always re-apply, even when the file didn't change: if an earlier apply
   # failed, the file and the live rules disagree, and a retry must fix that.
-  "$drv" refresh _ "" "$_DEVVM_HERE"
+  "$drv" refresh _ "" "$_DEVVM_HERE" || {
+    echo "devvm allow: the list was saved but could NOT be applied — live rules are unchanged." >&2
+    echo "  Fix the error above, then run: devvm allow --refresh" >&2
+    return 1
+  }
 }
 
 devvm() {

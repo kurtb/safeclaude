@@ -222,13 +222,18 @@ dotclaude/
 - Anthropic, OpenAI, Google AI / gcloud endpoints — including `mcp-proxy.anthropic.com`, which carries your claude.ai connectors (Linear, Claude Docs, Gmail, …); see the note below
 - Langfuse (LLM observability — `langfuse.com`, `cloud.langfuse.com`, `us.cloud.langfuse.com`)
 - npm, PyPI, Bun, Node.js downloads (`nodejs.org`, for `fnm install`), Ubuntu apt mirrors
-- Pulumi, GitHub auxiliary CDNs (objects, raw, codeload, `release-assets` for release downloads, `pkg-containers` for ghcr.io layers), GitHub Pages
+- Pulumi, GitHub auxiliary CDNs (objects, raw, codeload, `release-assets.githubusercontent.com` for release downloads, `pkg-containers.githubusercontent.com` for ghcr.io layers), GitHub Pages
 - Kubernetes (`dl.k8s.io`, `registry.k8s.io`), Helm (`get.helm.sh`), Istio (`istio-release.storage.googleapis.com`)
 - Container registries (`ghcr.io`, `quay.io` and its `cdn*.quay.io` blob CDNs, `docker.io`) and `cdn.registry.k8s.io` for `registry.k8s.io` layers
 - Tailscale: package mirror, coordination/login (`controlplane`/`login.tailscale.com`), and the DERP relay IPs (fetched from the published DERP map — see [Tailscale](#tailscale))
 - Localhost, your Docker host network, DNS, SSH
 
 Egress to anything else is rejected.
+
+The container's allowlist is **IP-level**: each name is resolved at container
+start and its addresses are allowed, so a CDN-fronted host also admits whatever
+else shares those addresses. (The [dev-box VM](vm/README.md) additionally checks
+the TLS server name.)
 
 > **Connectors are an egress path.** Claude Code reaches claude.ai connectors
 > (remote MCP servers) through one host, `mcp-proxy.anthropic.com`; Anthropic's
