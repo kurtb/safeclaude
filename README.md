@@ -395,7 +395,15 @@ safeclaude
 present. Each arch is built on its own **native** runner (not QEMU) because
 gstack's setup launches Chromium during the build.
 
-For VM milestones, run Devin Review on each PR. Before tagging a release, run a Devin security scan against the candidate commit (or rescan new commits since the previous scan). Focus on the guest/host boundary, privileged installation, egress rules, and credentials. Record the reviewed SHA, CI runs, and the disposition of findings in Linear. Run the VM checks workflow manually for the full guest-tool installation test. The release includes the VM installer and its runtime in `devvm.tar.gz` with a SHA-256 checksum.
+The VM release asset, `devvm.tar.gz`, contains the installer and runtime. Download it and `devvm.tar.gz.sha256` from the same release, then run:
+
+```bash
+sha256sum -c devvm.tar.gz.sha256
+tar -xzf devvm.tar.gz
+sudo ./devvm/install-host.sh
+```
+
+Follow the [VM quickstart](vm/QUICKSTART.md) to initialize a new Incus host and boot your project.
 
 Tags / release process:
 

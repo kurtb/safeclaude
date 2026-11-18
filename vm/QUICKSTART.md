@@ -29,7 +29,7 @@ sudo usermod -aG incus-admin "$USER"
 # Log out and back in to activate the group.
 ```
 
-The installer refreshes APT and installs the latest stable Incus and required host packages on Ubuntu 24.04/26.04 and Debian 13 (amd64 or arm64). It uses the [signed Zabbly stable channel](https://github.com/zabbly/incus#stable-repository) and checks the installed package provenance. A configured Incus host can keep its existing storage and profile. Run `incus storage list` before initializing an existing host.
+The installer refreshes APT and installs the latest stable Incus and required host packages on Ubuntu 24.04/26.04 and Debian 13 (amd64 or arm64). It uses the [signed Zabbly stable channel](https://github.com/zabbly/incus#stable-repository) as a host package publisher. The installer checks the provenance of Incus, HAProxy and the named enforcement packages. APT resolves their dependencies using the host’s configured repositories. A configured Incus host can keep its existing storage and profile. Run `incus storage list` before initializing an existing host.
 
 Use `./vm/install-host.sh --check` for a read-only check against local APT metadata. On another supported Debian/Ubuntu configuration with manually provisioned packages, `sudo ./vm/install-host.sh --skip-packages` checks the same requirements and installs the CLI. The minimum versions are Incus 7.5.1 and HAProxy 2.8.
 

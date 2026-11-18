@@ -37,7 +37,9 @@ incus list --format json | jq -e --arg n "$name" --arg t "$type" 'any(.[]; .name
 [[ $(incus network get "$net" ipv4.nat) == false ]]
 incus exec "$name" -T -- bash -se <<'GUEST'
 curl -fsSL --retry 3 --max-time 30 https://github.com/robots.txt >/dev/null
+curl -fsSL --max-time 30 --resolve github.com:443:192.0.2.1 https://github.com/robots.txt >/dev/null
 if getent ahostsv4 example.com; then echo "off-list DNS answered" >&2; exit 1; fi
+if timeout 5 bash -c 'exec 3<>/dev/tcp/github.com/22'; then echo "SSH egress allowed" >&2; exit 1; fi
 GUEST
 if [[ $mode == vm ]]; then
   devvm upgrade
