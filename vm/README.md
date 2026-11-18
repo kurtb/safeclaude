@@ -163,7 +163,10 @@ Run `vm/test/project-isolation.sh VM_A VM_B` against two running project VMs aft
    the dedicated proxy and firewall units. Incus requires `devvm-firewall.service`
    to restore the last applied rules before the daemon starts. A drop-in for
    `nftables.service` restores them again after that service starts, reloads or
-   stops, since each of those flushes the whole ruleset. The installer puts `devvm` on PATH. If you previously sourced `devvm.sh`, remove that line from your shell startup and open a new shell.
+   stops, since each of those flushes the whole ruleset. The restore runs only
+   after the flush, and the stock `/etc/nftables.conf` also clears the Incus
+   tables and any other rules, so stop project VMs before host nftables
+   maintenance. A failed restore marks `nftables.service` as failed. The installer puts `devvm` on PATH. If you previously sourced `devvm.sh`, remove that line from your shell startup and open a new shell.
 2. Ensure your shell is in the `incus-admin` group (`newgrp incus-admin` or
    re-login) so `devvm` can talk to the Incus socket.
 
