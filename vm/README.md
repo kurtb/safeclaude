@@ -146,7 +146,7 @@ checks 25 things a guest must or must not be able to do, including:
 
 **Project isolation.** Each VM has a dedicated `dvmp-<hash>` bridge with a subnet allocated by Incus. The shared `devvmbr0` address hosts the proxy. The host drops inter-bridge forwarding and port-to-port traffic on legacy bridges. Stop a legacy VM once and run `devvm up` to move its NIC. Its files and snapshots stay on disk. Removing a project also removes its bridge.
 
-In a two-VM Incus/KVM test, both Ubuntu guests reached GitHub over HTTPS, denied a name outside the allowlist, and could not use a sibling VM's test service. Re-run the checks in the [quickstart](QUICKSTART.md) after upgrading your host.
+Run `vm/test/project-isolation.sh VM_A VM_B` against two running project VMs after upgrading your host. It checks HTTPS from each VM, starts a temporary TCP service in each, and verifies that the host can reach both services while the other project cannot. The [quickstart](QUICKSTART.md) covers DNS and proxy checks.
 
 ### Host setup (prerequisites)
 
