@@ -42,7 +42,7 @@ cd ~/path/to/your-project      # a git repo; a public https origin is cloned ins
 devvm                          # create network+VM (first run), apply egress, boot, shell in (bare VM, root)
 ```
 
-The driver creates a dedicated bridge and subnet for the project, configures its DNS allowlist, and initializes the VM stopped. It applies the host firewall and proxy before starting the VM. A fresh VM opens a root shell.
+The driver creates a dedicated bridge and subnet for the project, configures its DNS allowlist, and initializes the VM stopped. Before starting the VM it checks that the effective devices, including those inherited from Incus profiles, consist of one managed root disk and the project NIC. It then applies the host firewall and proxy. A fresh VM opens a root shell.
 
 Exit that shell and run the installed guest setup from the host:
 

@@ -118,6 +118,22 @@ ensure_project_nic() {
   incus config device set "$name" eth0 "network=$net"
 }
 
+# Incus merges profile devices into the instance. A local eth0 on the right
+# bridge is insufficient if a profile also supplies another NIC or a share.
+check_project_devices() {
+  local net=$1
+  if ! incus list "$name" --format json | jq -e --arg name "$name" --arg net "$net" '
+    def root_disk: .type == "disk" and .path == "/" and
+      (.pool // "") != "" and (.source // "") == "";
+    .[] | select(.name == $name) | .expanded_devices |
+      .eth0.type == "nic" and .eth0.network == $net and
+      ([.[] | select(.type != "none")] | length == 2 and any(.[]; root_disk))
+  ' >/dev/null; then
+    echo "Expected one managed root disk and only the project NIC on $net. Inspect: incus config show $name --expanded" >&2
+    return 1
+  fi
+}
+
 remove_project() {
   local net
   net="$(project_bridge)"
@@ -205,6 +221,7 @@ prepare_project() {
   ensure_project_network "$net"
   if [[ $verb == ensure ]]; then create_if_absent "$net"; fi
   ensure_project_nic "$net"
+  check_project_devices "$net"
   apply_egress
 }
 

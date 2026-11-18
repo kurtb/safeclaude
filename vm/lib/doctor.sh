@@ -97,6 +97,7 @@ cmd_doctor() {
     devvmbr0|"dvmp-${name##*-}") ;;
     *) echo "FAIL  $name is attached to an unexpected network: $net" >&2; return 1 ;;
   esac
+  doctor_check 'effective Incus devices limited to root disk and project NIC' check_project_devices "$net"
   doctor_check "host nftables enforcement ($net)" check_firewall "$net"
   expected_dns="$(build_raw_dnsmasq)" || return 1
   actual_dns="$(incus network get "$net" raw.dnsmasq)" || return 1
