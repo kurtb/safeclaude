@@ -40,7 +40,7 @@ install -d -o root -g root -m 0755 "$DEST/drivers" "$DEST/lib"
 # Only ship named runtime files, never extra files from a working tree.
 install -o root -g root -m 0755 "$SRC"/{devvm,guest-setup,guest-tools,guest-cloud-tools}.sh "$DEST/"
 install -o root -g root -m 0755 "$SRC"/drivers/{linux-incus,incus-editor,darwin-lima,windows-wsl2}.sh "$DEST/drivers/"
-install -o root -g root -m 0755 "$SRC/lib/guest-editor-setup.sh" "$DEST/lib/"
+install -o root -g root -m 0755 "$SRC"/lib/{doctor,guest-doctor,guest-editor-setup}.sh "$DEST/lib/"
 [[ -d /usr/local/bin ]] || install -d -o root -g root -m 0755 /usr/local/bin
 install -T -o root -g root -m 0755 "$SRC/host/devvm" "$CLI"
 echo "Installed $CLI; from a project directory, run: devvm"

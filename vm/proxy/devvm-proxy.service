@@ -10,6 +10,9 @@ StartLimitIntervalSec=0
 Type=notify
 ExecStartPre=/usr/sbin/haproxy -c -q -f /etc/devvm/haproxy.cfg
 ExecStart=/usr/sbin/haproxy -Ws -f /etc/devvm/haproxy.cfg
+# Record what's loaded on boot, when the host egress script hasn't run yet.
+RuntimeDirectory=devvm-proxy-applied
+ExecStartPost=/usr/bin/install -m 0644 /etc/devvm/haproxy.cfg /etc/devvm/allowed-domains /etc/devvm/bogons /run/devvm-proxy-applied/
 ExecReload=/usr/sbin/haproxy -c -q -f /etc/devvm/haproxy.cfg
 ExecReload=/bin/kill -USR2 $MAINPID
 KillMode=mixed

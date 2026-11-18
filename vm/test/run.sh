@@ -7,6 +7,8 @@ while IFS= read -r -d '' script; do
     '#!'*bash*|'#!'*'/sh') shellcheck --severity=warning "$script" ;;
   esac
 done < <(find "$vm" -type f -print0)
+"/usr/bin/python3" -B "$vm/test/host-packages-test.py"
+"$vm/test/guest-doctor-test.sh"
 
 LC_ALL=C awk '
   /^[[:space:]]*(#|$)/ { next }
