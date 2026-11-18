@@ -60,6 +60,10 @@ others don't:
 5. **`forward` default-deny** on the VM subnet — nothing but the proxied web
    traffic leaves; every other direct connection is rejected.
 
+The proxy reads the host's `/etc/resolv.conf` once, when it starts. If the
+host's resolver changes, allowed names fail (closed) until you run
+`sudo systemctl restart devvm-proxy`.
+
 The proxy is its own service, `devvm-proxy.service`, with its config in
 `/etc/devvm/`; the distro's `haproxy.service` is neither used nor modified. Its
 log is the audit trail — one line per connection, with the name and the address
@@ -149,8 +153,8 @@ run Phase 3 of the [QUICKSTART](QUICKSTART.md) after upgrading.
 
 ### Host setup (prerequisites)
 
-0. Install **`haproxy`** (2.2 or newer; tested on 2.8, which Ubuntu 24.04
-   ships) and **`nftables`**, plus Incus (`incus admin init`).
+0. Install **`haproxy`** (2.8 or newer, which Ubuntu 24.04 ships; older
+   versions are untested and refused) and **`nftables`**, plus Incus (`incus admin init`).
    Incus pulls in `dnsmasq-base` and runs its own dnsmasq on the managed bridge.
    Squid is no longer used.
 1. `sudo ./install-host.sh` — installs the egress enforcement root-owned to

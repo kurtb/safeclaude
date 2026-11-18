@@ -8,7 +8,7 @@
 #    "shared" network, so the VM gets a real host-side interface (bridge100 /
 #    vmenetX) that the host can filter.
 #  - Enforce egress on the HOST with pf (the macOS analogue of nftables): an
-#    anchor with a table of the resolved allowlist CIDRs (to be written; the Linux lane no longer resolves one),
+#    anchor with a table of the resolved allowlist CIDRs (the macOS lane will need its own resolver for this),
 #    default-block on the VM's interface, pass only to the table + the bridge
 #    resolver for DNS.
 #  - Mount the project dir via Lima's virtiofs mount.

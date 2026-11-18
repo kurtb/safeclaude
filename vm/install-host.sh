@@ -12,8 +12,9 @@ command -v haproxy >/dev/null \
 # The proxy config uses do-resolve and address matching on variables.
 hv="$(haproxy -v | sed -n '1s/^HAProxy version \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')"
 read -r hmaj hmin <<<"${hv:-0 0}"
-{ [ "$hmaj" -gt 2 ] || { [ "$hmaj" -eq 2 ] && [ "$hmin" -ge 2 ]; }; } \
-  || { echo "haproxy 2.2 or newer is required (found: $(haproxy -v | head -1))" >&2; exit 1; }
+# 2.8 (Ubuntu 24.04) is the oldest version this has been tested on.
+{ [ "$hmaj" -gt 2 ] || { [ "$hmaj" -eq 2 ] && [ "$hmin" -ge 8 ]; }; } \
+  || { echo "haproxy 2.8 or newer is required (found: $(haproxy -v | head -1))" >&2; exit 1; }
 
 install -d -o root -g root -m 0755 "$DEST"
 # Flatten the files host-egress.sh needs into one root-owned dir.
