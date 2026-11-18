@@ -213,7 +213,17 @@ case "$verb" in
     # and keep today's NICs, boot policy and sizing even for legacy snapshots.
     apply_egress
     incus snapshot restore "$name" "$label" --diskonly
-    if is_running; then wait_agent; fi ;;
+    if is_running; then
+      wait_agent
+      # The Incus agent can answer while Ubuntu is still booting and an
+      # immediate graceful stop can miss its ACPI shutdown request.
+      incus exec "$name" -- sh -c '
+        state=$(timeout 120 systemctl is-system-running --wait)
+        case "$state" in running|degraded) exit 0 ;; esac
+        echo "guest boot did not finish after restore (state: ${state:-unknown})" >&2
+        exit 1
+      '
+    fi ;;
   doctor) need
     # shellcheck source=/dev/null
     source "$VMDIR/lib/doctor.sh"
