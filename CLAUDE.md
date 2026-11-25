@@ -19,3 +19,10 @@ Releases are cut from main via the **Release** workflow (Actions → Release →
 - **patch** — fixes and tool-version bumps with no change to behavior or to what the sandbox is allowed to reach.
 - **minor** — a new capability (tool/command) **OR any change to the firewall egress allowlist / surface** — i.e. what the sandbox is permitted to reach out to. Broadening egress (e.g. widening a host to a `/24`, adding a domain, or adding a provider IP range) is a **posture change** and is a minor even when it "just fixes" an already-listed host, so the change is visible to anyone auditing the egress posture.
 - **major** — a breaking change to how you use it (removed/renamed command, changed volume or run model).
+
+## Quality checks
+
+- Use `/usr/bin/python3 -B vm/test/host-packages-test.py` for the focused host-package preflight regression tests.
+- Run `vm/test/run.sh` for ShellCheck, offline regression tests and isolated CLI/driver checks. The full run needs ShellCheck, Python 3 with `python3-apt`, HAProxy, `jq`, `nftables` and `iproute2` (the default host-egress case calls `ip -4 -o addr show`); install them with `sudo apt-get update && sudo apt-get install -y shellcheck haproxy jq nftables python3-apt iproute2`. The isolated checks also need mount/network namespace privileges through `sudo`. If non-root `sudo -n true` is unavailable, the runner skips the namespace suite and exits successfully; treat that as a partial check. See `vm/README.md` for setup details.
+- `vm/test/run.sh --rig` starts host services and changes network state; run it only on a disposable Linux host, never a shared machine.
+- PR CI runs `VM checks` (`vm` runs `vm/test/run.sh --rig`; `incus` tests container and KVM guests) and `Build VM installer` (builds and installs on `linux/amd64` and `linux/arm64`). Preserve these checks when changing workflows.

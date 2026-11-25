@@ -143,7 +143,9 @@ uses local DNS, HTTP and TLS fixtures to check the policy, including:
 - SSH, other ports, host services and outside DNS are unreachable;
 - with the proxy stopped, nothing gets out.
 
-Run `vm/test/run.sh` for static and isolated CLI/driver checks. On a disposable host with ShellCheck, HAProxy, jq, nftables, dnsmasq-base, dnsutils, OpenSSL, curl, iproute2 and python3-apt, run `vm/test/run.sh --rig` to include the offline egress suite. The rig starts system services and refuses an existing devvm install. Set `RIG_LIVE=1` when invoking the egress test directly to add a live GitHub check. The Incus jobs access the image server and guest package repositories.
+Run `vm/test/run.sh` for ShellCheck, offline regression tests and isolated CLI/driver checks. Its full run needs ShellCheck, Python 3 with `python3-apt`, HAProxy, `jq`, `nftables` and `iproute2` (the default host-egress case calls `ip -4 -o addr show`); install them with `sudo apt-get update && sudo apt-get install -y shellcheck haproxy jq nftables python3-apt iproute2`. The isolated tests use mount and network namespaces through `sudo`. If a non-root caller cannot run `sudo -n true`, the runner skips those tests and exits successfully, so that is only a partial check. The runner copies the host `/etc/resolv.conf` into its network namespace; a host-only loopback resolver such as `127.0.0.53` is not reachable there and can make HAProxy validation fail.
+
+To include the egress suite, run `vm/test/run.sh --rig` only on a disposable Linux host with root access. The `VM checks` workflow installs `shellcheck haproxy jq nftables dnsmasq-base bind9-dnsutils` and then runs this command; the rig also uses OpenSSL, curl, iproute2, Python 3 with `python3-apt`, and systemd. It starts host services, changes host network state and refuses an existing devvm install, so do not run it on a shared host. Set `RIG_LIVE=1` when invoking the egress test directly to add a live GitHub check. The Incus jobs access the image server and guest package repositories.
 
 For a release or isolation milestone:
 
